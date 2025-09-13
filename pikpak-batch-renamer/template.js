@@ -154,6 +154,28 @@
     // 延迟函数
     const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+    // 通用样式常量
+    const STYLES = {
+        overlay: {
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+        },
+        modal: {
+            backgroundColor: '#fff', borderRadius: '8px', padding: '24px', boxShadow: '0 10px 25px rgba(0, 0, 0, 0.2)'
+        },
+        header: {
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            marginBottom: '20px', borderBottom: '1px solid #ebeef5', paddingBottom: '16px'
+        },
+        button: {
+            padding: '8px 16px', border: 'none', borderRadius: '4px', cursor: 'pointer'
+        },
+        primaryBtn: { backgroundColor: '#409eff', color: '#fff' },
+        secondaryBtn: { backgroundColor: '#fff', color: '#606266', border: '1px solid #dcdfe6' },
+        disabledBtn: { backgroundColor: '#c0c4cc', cursor: 'not-allowed', opacity: 0.6 },
+        text: { primary: '#303133', secondary: '#606266', success: '#67c23a', danger: '#f56c6c', warning: '#e6a23c' }
+    };
+
     // 配置存储
     const CONFIG_KEY = 'pikpak-batch-renamer-config';
     const getConfig = () => {
@@ -171,241 +193,86 @@
     const ConfigDialog = ({ isOpen, onClose, config, onConfigChange }) => {
         if (!isOpen) return null;
 
-        return React.createElement('div', {
-            style: {
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                zIndex: 10001,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
+        const configOptions = [
+            {
+                key: 'addDatePrefix',
+                label: '在文件名开头增加发行日期',
+                desc: '启用后文件名格式为: {日期} {标题}，例如: 2025-09-12 标题名称.mp4'
+            },
+            {
+                key: 'fixFileExtension', 
+                label: '修复文件扩展名',
+                desc: '当文件缺少扩展名时，根据文件MIME类型自动添加合适的扩展名'
             }
-        }, React.createElement('div', {
-            style: {
-                backgroundColor: '#fff',
-                borderRadius: '8px',
-                padding: '24px',
-                width: '400px',
-                boxShadow: '0 10px 25px rgba(0, 0, 0, 0.2)'
-            }
-        }, [
-            // 标题栏
-            React.createElement('div', {
-                key: 'header',
-                style: {
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: '20px',
-                    borderBottom: '1px solid #ebeef5',
-                    paddingBottom: '16px'
-                }
-            }, [
-                React.createElement('h3', {
-                    key: 'title',
-                    style: { margin: 0, color: '#303133', fontSize: '16px' }
-                }, '重命名配置'),
-                React.createElement('button', {
-                    key: 'close',
-                    onClick: onClose,
-                    style: {
-                        background: 'none',
-                        border: 'none',
-                        fontSize: '20px',
-                        cursor: 'pointer',
-                        color: '#909399',
-                        padding: '4px'
-                    }
-                }, '×')
-            ]),
+        ];
 
-            // 配置项
-            React.createElement('div', {
-                key: 'content',
-                style: { marginBottom: '20px' }
-            }, [
-                React.createElement('label', {
-                    key: 'option1',
-                    style: {
-                        display: 'flex',
-                        alignItems: 'center',
-                        cursor: 'pointer',
-                        padding: '8px 0'
-                    }
-                }, [
-                    React.createElement('input', {
-                        key: 'checkbox1',
-                        type: 'checkbox',
-                        checked: config.addDatePrefix,
-                        onChange: (e) => onConfigChange({ ...config, addDatePrefix: e.target.checked }),
-                        style: { marginRight: '8px' }
-                    }),
-                    React.createElement('span', {
-                        key: 'label1',
-                        style: { fontSize: '14px', color: '#303133' }
-                    }, '在文件名开头增加发行日期'),
+        return React.createElement('div', { style: { ...STYLES.overlay, zIndex: 10001 } },
+            React.createElement('div', { style: { ...STYLES.modal, width: '400px' } }, [
+                React.createElement('div', { key: 'header', style: STYLES.header }, [
+                    React.createElement('h3', { key: 'title', style: { margin: 0, color: STYLES.text.primary, fontSize: '16px' } }, '重命名配置'),
+                    React.createElement('button', { key: 'close', onClick: onClose, style: { background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: STYLES.text.secondary, padding: '4px' } }, '×')
                 ]),
-                React.createElement('div', {
-                    key: 'desc1',
-                    style: {
-                        fontSize: '12px',
-                        color: '#909399',
-                        marginLeft: '24px',
-                        lineHeight: '1.4',
-                        marginBottom: '12px'
-                    }
-                }, '启用后文件名格式为: {日期} {标题}，例如: 2025-09-12 标题名称.mp4'),
-                
-                React.createElement('label', {
-                    key: 'option2',
-                    style: {
-                        display: 'flex',
-                        alignItems: 'center',
-                        cursor: 'pointer',
-                        padding: '8px 0'
-                    }
-                }, [
-                    React.createElement('input', {
-                        key: 'checkbox2',
-                        type: 'checkbox',
-                        checked: config.fixFileExtension,
-                        onChange: (e) => onConfigChange({ ...config, fixFileExtension: e.target.checked }),
-                        style: { marginRight: '8px' }
-                    }),
-                    React.createElement('span', {
-                        key: 'label2',
-                        style: { fontSize: '14px', color: '#303133' }
-                    }, '修复文件扩展名'),
-                ]),
-                React.createElement('div', {
-                    key: 'desc2',
-                    style: {
-                        fontSize: '12px',
-                        color: '#909399',
-                        marginLeft: '24px',
-                        lineHeight: '1.4'
-                    }
-                }, '当文件缺少扩展名时，根据文件MIME类型自动添加合适的扩展名')
-            ]),
-
-            // 底部按钮
-            React.createElement('div', {
-                key: 'footer',
-                style: {
-                    display: 'flex',
-                    justifyContent: 'flex-end',
-                    gap: '12px',
-                    paddingTop: '16px',
-                    borderTop: '1px solid #ebeef5'
-                }
-            }, [
-                React.createElement('button', {
-                    key: 'cancel',
-                    onClick: onClose,
-                    style: {
-                        padding: '8px 16px',
-                        backgroundColor: '#fff',
-                        color: '#606266',
-                        border: '1px solid #dcdfe6',
-                        borderRadius: '4px',
-                        cursor: 'pointer'
-                    }
-                }, '取消'),
-                React.createElement('button', {
-                    key: 'save',
-                    onClick: () => {
-                        setConfig(config);
-                        onClose();
-                    },
-                    style: {
-                        padding: '8px 16px',
-                        backgroundColor: '#409eff',
-                        color: '#fff',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: 'pointer'
-                    }
-                }, '保存')
+                React.createElement('div', { key: 'content', style: { marginBottom: '20px' } }, 
+                    configOptions.map((option, i) => [
+                        React.createElement('label', { key: `option${i}`, style: { display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '8px 0' } }, [
+                            React.createElement('input', { key: 'checkbox', type: 'checkbox', checked: config[option.key], onChange: (e) => onConfigChange({ ...config, [option.key]: e.target.checked }), style: { marginRight: '8px' } }),
+                            React.createElement('span', { key: 'label', style: { fontSize: '14px', color: STYLES.text.primary } }, option.label)
+                        ]),
+                        React.createElement('div', { key: `desc${i}`, style: { fontSize: '12px', color: STYLES.text.secondary, marginLeft: '24px', lineHeight: '1.4', marginBottom: '12px' } }, option.desc)
+                    ]).flat()
+                ),
+                React.createElement('div', { key: 'footer', style: { display: 'flex', justifyContent: 'flex-end', gap: '12px', paddingTop: '16px', borderTop: '1px solid #ebeef5' } }, [
+                    React.createElement('button', { key: 'cancel', onClick: onClose, style: { ...STYLES.button, ...STYLES.secondaryBtn } }, '取消'),
+                    React.createElement('button', { key: 'save', onClick: () => { setConfig(config); onClose(); }, style: { ...STYLES.button, ...STYLES.primaryBtn } }, '保存')
+                ])
             ])
-        ]));
+        );
     };
 
     // 文件项组件
     const FileItem = ({ file, selected, onSelect, validationStatus, newName }) => {
-        const getStatusIcon = () => {
-            switch (validationStatus) {
-                case 'valid': return '✅';
-                case 'invalid': return '❌';
-                case 'loading': return '⏳';
-                default: return '';
-            }
+        const statusMap = {
+            valid: { icon: '✅', color: STYLES.text.success },
+            invalid: { icon: '❌', color: STYLES.text.danger },
+            loading: { icon: '⏳', color: STYLES.text.warning }
         };
-
-        const getStatusColor = () => {
-            switch (validationStatus) {
-                case 'valid': return '#67c23a';
-                case 'invalid': return '#f56c6c';
-                case 'loading': return '#e6a23c';
-                default: return '#606266';
-            }
-        };
+        const status = statusMap[validationStatus] || { icon: '', color: STYLES.text.secondary };
 
         return React.createElement('div', {
             style: {
-                display: 'flex',
-                alignItems: 'center',
-                padding: '8px 0',
-                borderBottom: '1px solid #f0f0f0',
-                opacity: validationStatus === 'invalid' ? 0.5 : 1
+                display: 'flex', alignItems: 'center', padding: '8px 0',
+                borderBottom: '1px solid #f0f0f0', opacity: validationStatus === 'invalid' ? 0.5 : 1
             }
         }, [
             React.createElement('input', {
-                key: 'checkbox',
-                type: 'checkbox',
-                checked: selected,
+                key: 'checkbox', type: 'checkbox', checked: selected,
                 onChange: (e) => onSelect(file.id, e.target.checked),
-                disabled: validationStatus === 'invalid',
-                style: { marginRight: '10px' }
+                disabled: validationStatus === 'invalid', style: { marginRight: '10px' }
             }),
             React.createElement('span', {
-                key: 'icon',
-                style: { marginRight: '8px', fontSize: '16px' }
+                key: 'icon', style: { marginRight: '8px', fontSize: '16px' }
             }, file.kind === 'drive#folder' ? '📁' : '📄'),
-            React.createElement('div', {
-                key: 'content',
-                style: { flex: 1, minWidth: 0 }
-            }, [
+            React.createElement('div', { key: 'content', style: { flex: 1, minWidth: 0 } }, [
                 React.createElement('div', {
-                    key: 'name',
-                    style: { 
-                        fontWeight: '500',
-                        color: '#303133',
-                        wordBreak: 'break-word'
-                    }
+                    key: 'name', style: { fontWeight: '500', color: STYLES.text.primary, wordBreak: 'break-word' }
                 }, file.name),
                 newName && React.createElement('div', {
-                    key: 'newname',
-                    style: {
-                        fontSize: '12px',
-                        color: '#67c23a',
-                        marginTop: '2px',
-                        wordBreak: 'break-word'
-                    }
+                    key: 'newname', style: { fontSize: '12px', color: STYLES.text.success, marginTop: '2px', wordBreak: 'break-word' }
                 }, `→ ${newName}`)
             ]),
             React.createElement('span', {
-                key: 'status',
-                style: { 
-                    marginLeft: '8px',
-                    color: getStatusColor(),
-                    fontSize: '16px'
-                }
-            }, getStatusIcon())
+                key: 'status', style: { marginLeft: '8px', color: status.color, fontSize: '16px' }
+            }, status.icon)
         ]);
+    };
+
+    // 辅助函数：创建按钮
+    const createButton = (key, text, onClick, styleType = 'primary', disabled = false) => {
+        const btnStyle = { ...STYLES.button };
+        if (disabled) Object.assign(btnStyle, STYLES.disabledBtn);
+        else Object.assign(btnStyle, STYLES[styleType + 'Btn']);
+        
+        return React.createElement('button', { key, onClick, disabled, style: btnStyle }, text);
     };
 
     // 主模态窗口组件
@@ -614,70 +481,27 @@
 
         if (!isOpen) return null;
 
-        return React.createElement('div', {
-            style: {
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                zIndex: 10000,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-            }
-        }, React.createElement('div', {
-            style: {
-                backgroundColor: '#fff',
-                borderRadius: '8px',
-                padding: '24px',
-                width: '90%',
-                maxWidth: '800px',
-                maxHeight: '80vh',
-                display: 'flex',
-                flexDirection: 'column',
-                boxShadow: '0 10px 25px rgba(0, 0, 0, 0.2)'
-            }
-        }, [
-            // 标题栏
-            React.createElement('div', {
-                key: 'header',
-                style: {
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: '20px',
-                    borderBottom: '1px solid #ebeef5',
-                    paddingBottom: '16px'
+        return React.createElement('div', { style: { ...STYLES.overlay, zIndex: 10000 } },
+            React.createElement('div', { 
+                style: { 
+                    ...STYLES.modal, width: '90%', maxWidth: '800px', maxHeight: '80vh',
+                    display: 'flex', flexDirection: 'column'
                 }
             }, [
-                React.createElement('h2', {
-                    key: 'title',
-                    style: { margin: 0, color: '#303133', fontSize: '18px' }
-                }, renameResults ? '重命名完成' : (showConfirmation ? '确认重命名' : '批量重命名文件')),
-                React.createElement('button', {
-                    key: 'close',
-                    onClick: () => {
-                        resetModal();
-                        onClose();
-                        // 如果有重命名结果，强制刷新页面
-                        if (renameResults && renameResults.success > 0) {
-                            setTimeout(() => {
-                                window.location.reload();
-                            }, 300);
-                        }
-                    },
-                    style: {
-                        background: 'none',
-                        border: 'none',
-                        fontSize: '24px',
-                        cursor: 'pointer',
-                        color: '#909399',
-                        padding: '4px'
-                    }
-                }, '×')
-            ]),
+                React.createElement('div', { key: 'header', style: STYLES.header }, [
+                    React.createElement('h2', { key: 'title', style: { margin: 0, color: STYLES.text.primary, fontSize: '18px' } }, 
+                        renameResults ? '重命名完成' : (showConfirmation ? '确认重命名' : '批量重命名文件')),
+                    React.createElement('button', {
+                        key: 'close',
+                        onClick: () => {
+                            resetModal(); onClose();
+                            if (renameResults && renameResults.success > 0) {
+                                setTimeout(() => window.location.reload(), 300);
+                            }
+                        },
+                        style: { background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: STYLES.text.secondary, padding: '4px' }
+                    }, '×')
+                ]),
 
             // 内容区域
             React.createElement('div', {
@@ -775,52 +599,13 @@
                             key: 'buttons',
                             style: { display: 'flex', gap: '8px' }
                         }, [
+                            createButton('validate', 
+                                isValidating ? '扫描中...' : (selectedFiles.size === 0 ? '请选择文件' : '扫描番号'),
+                                validateFiles, 'primary', isValidating || selectedFiles.size === 0),
                             React.createElement('button', {
-                                key: 'validate',
-                                onClick: validateFiles,
-                                disabled: isValidating || selectedFiles.size === 0,
-                                style: {
-                                    padding: '8px 16px',
-                                    backgroundColor: (isValidating || selectedFiles.size === 0) ? '#c0c4cc' : '#409eff',
-                                    color: '#fff',
-                                    border: 'none',
-                                    borderRadius: '4px',
-                                    cursor: (isValidating || selectedFiles.size === 0) ? 'not-allowed' : 'pointer',
-                                    opacity: (isValidating || selectedFiles.size === 0) ? 0.6 : 1
-                                }
-                            }, isValidating ? '扫描中...' : (selectedFiles.size === 0 ? '请选择文件' : '扫描番号')),
-                            React.createElement('button', {
-                                key: 'config',
-                                onClick: () => setShowConfigDialog(true),
-                                title: '配置选项',
-                                style: {
-                                    padding: '8px',
-                                    backgroundColor: 'transparent',
-                                    color: '#909399',
-                                    border: '1px solid #dcdfe6',
-                                    borderRadius: '4px',
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    transition: 'all 0.3s ease'
-                                },
-                                onMouseEnter: function(e) {
-                                    e.target.style.backgroundColor = '#f5f7fa';
-                                    e.target.style.color = '#409eff';
-                                },
-                                onMouseLeave: function(e) {
-                                    e.target.style.backgroundColor = 'transparent';
-                                    e.target.style.color = '#909399';
-                                }
-                            }, React.createElement('svg', {
-                                width: '16',
-                                height: '16',
-                                viewBox: '0 0 24 24',
-                                fill: 'none',
-                                stroke: 'currentColor',
-                                strokeWidth: '2'
-                            }, [
+                                key: 'config', onClick: () => setShowConfigDialog(true), title: '配置选项',
+                                style: { padding: '8px', backgroundColor: 'transparent', color: STYLES.text.secondary, border: '1px solid #dcdfe6', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }
+                            }, React.createElement('svg', { width: '16', height: '16', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: '2' }, [
                                 React.createElement('circle', { key: 'c1', cx: '12', cy: '12', r: '3' }),
                                 React.createElement('path', { key: 'p1', d: 'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z' })
                             ]))
@@ -873,62 +658,13 @@
                     style: { display: 'flex', gap: '12px' }
                 }, [
                     !showConfirmation ? [
-                        React.createElement('button', {
-                            key: 'cancel',
-                            onClick: () => {
-                                resetModal();
-                                onClose();
-                            },
-                            style: {
-                                padding: '10px 20px',
-                                backgroundColor: '#fff',
-                                color: '#606266',
-                                border: '1px solid #dcdfe6',
-                                borderRadius: '4px',
-                                cursor: 'pointer'
-                            }
-                        }, '取消'),
-                        React.createElement('button', {
-                            key: 'next',
-                            onClick: () => setShowConfirmation(true),
-                            disabled: selectedFiles.size === 0 || Object.keys(validationResults).length === 0,
-                            style: {
-                                padding: '10px 20px',
-                                backgroundColor: selectedFiles.size === 0 || Object.keys(validationResults).length === 0 ? '#c0c4cc' : '#67c23a',
-                                color: '#fff',
-                                border: 'none',
-                                borderRadius: '4px',
-                                cursor: selectedFiles.size === 0 || Object.keys(validationResults).length === 0 ? 'not-allowed' : 'pointer'
-                            }
-                        }, '下一步')
+                        createButton('cancel', '取消', () => { resetModal(); onClose(); }, 'secondary'),
+                        createButton('next', '下一步', () => setShowConfirmation(true), 'primary', 
+                            selectedFiles.size === 0 || Object.keys(validationResults).length === 0)
                     ] : [
-                        React.createElement('button', {
-                            key: 'back',
-                            onClick: () => setShowConfirmation(false),
-                            disabled: isRenaming,
-                            style: {
-                                padding: '10px 20px',
-                                backgroundColor: '#fff',
-                                color: '#606266',
-                                border: '1px solid #dcdfe6',
-                                borderRadius: '4px',
-                                cursor: isRenaming ? 'not-allowed' : 'pointer',
-                                opacity: isRenaming ? 0.6 : 1
-                            }
-                        }, '上一步'),
-                        React.createElement('button', {
-                            key: 'confirm',
-                            onClick: performBatchRename,
-                            disabled: isRenaming,
-                            style: {
-                                padding: '10px 20px',
-                                backgroundColor: isRenaming ? '#c0c4cc' : '#e6a23c',
-                                color: '#fff',
-                                border: 'none',
-                                borderRadius: '4px',
-                                cursor: isRenaming ? 'not-allowed' : 'pointer'
-                            }
-                        }, isRenaming ? '重命名中...' : '确认重命名')
+                        createButton('back', '上一步', () => setShowConfirmation(false), 'secondary', isRenaming),
+                        createButton('confirm', isRenaming ? '重命名中...' : '确认重命名', 
+                            performBatchRename, 'primary', isRenaming)
                     ]
                 ])
             ]),
