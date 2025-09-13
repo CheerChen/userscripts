@@ -1,0 +1,22 @@
+[
+  {
+    "fileName": "TESTMOVIE-001.mp4",
+    "isFile": true,
+    "extractResult": {
+      "format": "standard", 
+      "keyword": "testmovie-001"
+    },
+    "directAccess": {
+      "url": "https://av-wiki.net/testmovie-001/",
+      "likely": true
+    },
+    "searchFallback": {
+      "searchUrl": "https://av-wiki.net/?s=TESTMOVIE-001&post_type=product"
+    },
+    "fallbackDetailUrl": "https://av-wiki.net/testmovie-001/",
+    "avwikiResult": {
+      "title": "Test Movie 001 Sample Title",
+      "date": "2025-01-01"
+    }
+  }
+]
