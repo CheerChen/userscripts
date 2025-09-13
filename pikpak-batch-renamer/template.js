@@ -189,10 +189,8 @@
         localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
     };
 
-    // 配置对话框组件
-    const ConfigDialog = ({ isOpen, onClose, config, onConfigChange }) => {
-        if (!isOpen) return null;
-
+    // 内联配置面板组件
+    const ConfigPanel = ({ config, onConfigChange }) => {
         const configOptions = [
             {
                 key: 'addDatePrefix',
@@ -200,43 +198,74 @@
                 desc: '启用后文件名格式为: {日期} {标题}，例如: 2025-09-12 标题名称.mp4'
             },
             {
-                key: 'fixFileExtension', 
+                key: 'fixFileExtension',
                 label: '修复文件扩展名',
                 desc: '当文件缺少扩展名时，根据文件MIME类型自动添加合适的扩展名'
             }
         ];
 
-        return React.createElement('div', { style: { ...STYLES.overlay, zIndex: 10001 } },
-            React.createElement('div', { style: { ...STYLES.modal, width: '400px' } }, [
-                React.createElement('div', { key: 'header', style: STYLES.header }, [
-                    React.createElement('h3', { key: 'title', style: { margin: 0, color: STYLES.text.primary, fontSize: '16px' } }, '重命名配置'),
-                    React.createElement('button', { key: 'close', onClick: onClose, style: { background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: STYLES.text.secondary, padding: '4px' } }, '×')
+        const handleConfigChange = (newConfig) => {
+            setConfig(newConfig); // Save to localStorage
+            onConfigChange(newConfig); // Update parent component state
+        };
+
+        return React.createElement('div', {
+            style: {
+                padding: '12px',
+                backgroundColor: '#f8f9fa',
+                borderRadius: '6px',
+                marginTop: '-4px',
+                marginBottom: '16px',
+                borderTop: '1px solid #ebeef5'
+            }
+        },
+            configOptions.map((option, i) => React.createElement('div', { key: `config-option-${i}` }, [
+                React.createElement('label', { key: `option${i}`, style: { display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '8px 0' } }, [
+                    React.createElement('input', {
+                        key: 'checkbox',
+                        type: 'checkbox',
+                        checked: config[option.key],
+                        onChange: (e) => handleConfigChange({ ...config, [option.key]: e.target.checked }),
+                        style: { marginRight: '8px' }
+                    }),
+                    React.createElement('span', { key: 'label', style: { fontSize: '14px', color: STYLES.text.primary } }, option.label)
                 ]),
-                React.createElement('div', { key: 'content', style: { marginBottom: '20px' } }, 
-                    configOptions.map((option, i) => [
-                        React.createElement('label', { key: `option${i}`, style: { display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '8px 0' } }, [
-                            React.createElement('input', { key: 'checkbox', type: 'checkbox', checked: config[option.key], onChange: (e) => onConfigChange({ ...config, [option.key]: e.target.checked }), style: { marginRight: '8px' } }),
-                            React.createElement('span', { key: 'label', style: { fontSize: '14px', color: STYLES.text.primary } }, option.label)
-                        ]),
-                        React.createElement('div', { key: `desc${i}`, style: { fontSize: '12px', color: STYLES.text.secondary, marginLeft: '24px', lineHeight: '1.4', marginBottom: '12px' } }, option.desc)
-                    ]).flat()
-                ),
-                React.createElement('div', { key: 'footer', style: { display: 'flex', justifyContent: 'flex-end', gap: '12px', paddingTop: '16px', borderTop: '1px solid #ebeef5' } }, [
-                    React.createElement('button', { key: 'cancel', onClick: onClose, style: { ...STYLES.button, ...STYLES.secondaryBtn } }, '取消'),
-                    React.createElement('button', { key: 'save', onClick: () => { setConfig(config); onClose(); }, style: { ...STYLES.button, ...STYLES.primaryBtn } }, '保存')
-                ])
-            ])
+                React.createElement('div', { key: `desc${i}`, style: { fontSize: '12px', color: STYLES.text.secondary, marginLeft: '24px', lineHeight: '1.4', marginBottom: '12px' } }, option.desc)
+            ]))
         );
     };
 
+
     // 文件项组件
-    const FileItem = ({ file, selected, onSelect, validationStatus, newName }) => {
+    const FileItem = ({ file, selected, onSelect, validationStatus, newName, sortBy }) => {
         const statusMap = {
             valid: { icon: '✅', color: STYLES.text.success },
             invalid: { icon: '❌', color: STYLES.text.danger },
             loading: { icon: '⏳', color: STYLES.text.warning }
         };
         const status = statusMap[validationStatus] || { icon: '', color: STYLES.text.secondary };
+
+        const formatBytes = (bytes, decimals = 2) => {
+            if (!bytes || bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        };
+
+        const formatFileInfo = (item) => {
+            switch (sortBy) {
+                case 'size':
+                    return item.size ? formatBytes(parseInt(item.size)) : 'N/A';
+                case 'created_time':
+                    return item.created_time ? new Date(item.created_time).toLocaleString() : 'N/A';
+                case 'modified_time':
+                    return item.modified_time ? new Date(item.modified_time).toLocaleString() : 'N/A';
+                default:
+                    return '';
+            }
+        };
 
         return React.createElement('div', {
             style: {
@@ -261,7 +290,10 @@
                 }, `→ ${newName}`)
             ]),
             React.createElement('span', {
-                key: 'status', style: { marginLeft: '8px', color: status.color, fontSize: '16px' }
+                key: 'info', style: { marginLeft: '16px', fontSize: '12px', color: STYLES.text.secondary, whiteSpace: 'nowrap' }
+            }, formatFileInfo(file)),
+            React.createElement('span', {
+                key: 'status', style: { marginLeft: '16px', color: status.color, fontSize: '16px' }
             }, status.icon)
         ]);
     };
@@ -286,10 +318,44 @@
         const [progress, setProgress] = useState({ current: 0, total: 0 });
         const [showConfirmation, setShowConfirmation] = useState(false);
         const [renameResults, setRenameResults] = useState(null);
-        const [showConfigDialog, setShowConfigDialog] = useState(false);
-        const [config, setConfig] = useState(getConfig());
+        const [config, setConfigState] = useState(getConfig());
+        const [showConfigPanel, setShowConfigPanel] = useState(false);
+        const [sortBy, setSortBy] = useState('name');
+        const [sortDirection, setSortDirection] = useState('asc');
 
-        // 加载文件列表
+        const sortFiles = (filesToSort, currentSortBy, currentSortDirection) => {
+            const sorted = [...filesToSort].sort((a, b) => {
+                const aIsFolder = a.kind === 'drive#folder';
+                const bIsFolder = b.kind === 'drive#folder';
+
+                if (aIsFolder && !bIsFolder) return -1;
+                if (!aIsFolder && bIsFolder) return 1;
+
+                let aValue = a[currentSortBy];
+                let bValue = b[currentSortBy];
+
+                if (currentSortBy === 'size') {
+                    aValue = parseInt(aValue || '0');
+                    bValue = parseInt(bValue || '0');
+                } else if (currentSortBy === 'created_time' || currentSortBy === 'modified_time') {
+                    aValue = new Date(aValue).getTime();
+                    bValue = new Date(bValue).getTime();
+                } else {
+                    aValue = aValue?.toLowerCase() || '';
+                    bValue = bValue?.toLowerCase() || '';
+                }
+
+                let comparison = 0;
+                if (aValue > bValue) {
+                    comparison = 1;
+                } else if (aValue < bValue) {
+                    comparison = -1;
+                }
+                return currentSortDirection === 'asc' ? comparison : -comparison;
+            });
+            setFiles(sorted);
+        };
+        
         useEffect(() => {
             if (isOpen) {
                 let parent_id = window.location.href.split("/").pop();
@@ -297,25 +363,22 @@
                 
                 getList(parent_id).then(res => {
                     if (res.files) {
-                        // 排序：文件夹优先，然后各自按 a-z 排序
-                        const sortedFiles = res.files.sort((a, b) => {
-                            const aIsFolder = a.kind === 'drive#folder';
-                            const bIsFolder = b.kind === 'drive#folder';
-                            
-                            // 文件夹总是排在文件前面
-                            if (aIsFolder && !bIsFolder) return -1;
-                            if (!aIsFolder && bIsFolder) return 1;
-                            
-                            // 同类型内按文件名 a-z 排序
-                            return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
-                        });
-                        setFiles(sortedFiles);
+                        sortFiles(res.files, sortBy, sortDirection);
                     }
                 }).catch(error => {
                     console.error('获取文件列表失败:', error);
                 });
             }
         }, [isOpen]);
+
+        useEffect(() => {
+            sortFiles(files, sortBy, sortDirection);
+        }, [sortBy, sortDirection]);
+
+        const handleConfigChange = (newConfig) => {
+            setConfigState(newConfig);
+            setConfig(newConfig); // Persist to localStorage
+        };
 
         // 选择文件
         const handleFileSelect = (fileId, selected) => {
@@ -351,15 +414,13 @@
             const results = {};
             const names = {};
             
-            // 只处理选中的文件
             const selectedFilesList = files.filter(file => selectedFiles.has(file.id));
-            const batchSize = 3; // 批量大小
-            const delay_ms = 2000; // 延迟2秒
+            const batchSize = 3;
+            const delay_ms = 2000;
 
             for (let i = 0; i < selectedFilesList.length; i += batchSize) {
                 const batch = selectedFilesList.slice(i, i + batchSize);
                 
-                // 处理当前批次
                 await Promise.all(batch.map(async (file) => {
                     const isFile = file.kind !== 'drive#folder';
                     const keyword = extractKeyword(file.name, isFile);
@@ -369,32 +430,25 @@
                     }
 
                     results[file.id] = 'loading';
-                    setValidationResults({...results});
+                    setValidationResults(prev => ({...prev, ...results}));
 
                     try {
                         const result = await queryAVwiki(keyword);
                         results[file.id] = 'valid';
                         
-                        // 根据文件类型处理扩展名
                         let extension = '';
                         if (isFile) {
-                            // 对于文件，先尝试保留原始扩展名
                             const extensionMatch = file.name.match(/(\.[^.]+)$/);
                             extension = extensionMatch ? extensionMatch[1] : '';
                             
-                            // 如果没有扩展名且启用了修复扩展名功能
                             if (!extension && config.fixFileExtension && file.mime_type) {
                                 extension = getExtensionByMimeType(file.mime_type);
                             }
                         }
                         
-                        // 根据配置决定是否添加日期前缀
-                        let finalName;
-                        if (config.addDatePrefix && result.date) {
-                            finalName = `${result.date} ${result.title}`;
-                        } else {
-                            finalName = result.title;
-                        }
+                        let finalName = config.addDatePrefix && result.date
+                            ? `${result.date} ${result.title}`
+                            : result.title;
                         
                         names[file.id] = extension ? `${finalName}${extension}` : finalName;
                     } catch (error) {
@@ -402,10 +456,9 @@
                     }
                 }));
 
-                setValidationResults({...results});
-                setNewNames({...names});
+                setValidationResults(prev => ({...prev, ...results}));
+                setNewNames(prev => ({...prev, ...names}));
 
-                // 如果不是最后一批，则延迟
                 if (i + batchSize < selectedFilesList.length) {
                     await delay(delay_ms);
                 }
@@ -426,8 +479,8 @@
             let failed = 0;
             const failedFiles = [];
 
-            const batchSize = 5; // 重命名批量大小
-            const delay_ms = 1000; // 延迟1秒
+            const batchSize = 5;
+            const delay_ms = 1000;
 
             for (let i = 0; i < selectedFilesList.length; i += batchSize) {
                 const batch = selectedFilesList.slice(i, i + batchSize);
@@ -435,7 +488,6 @@
                 await Promise.all(batch.map(async (file) => {
                     const newName = newNames[file.id];
                     
-                    // 如果新名字和原名字相同，跳过
                     if (file.name === newName) {
                         success++;
                         setProgress({ current: success + failed, total });
@@ -447,7 +499,6 @@
                         success++;
                     } catch (error) {
                         failed++;
-                        
                         failedFiles.push({ 
                             name: file.name, 
                             error: error.message,
@@ -458,7 +509,6 @@
                     setProgress({ current: success + failed, total });
                 }));
 
-                // 如果不是最后一批，则延迟
                 if (i + batchSize < selectedFilesList.length) {
                     await delay(delay_ms);
                 }
@@ -477,6 +527,7 @@
             setShowConfirmation(false);
             setRenameResults(null);
             setProgress({ current: 0, total: 0 });
+            setShowConfigPanel(false);
         };
 
         if (!isOpen) return null;
@@ -511,12 +562,7 @@
                 // 结果显示
                 renameResults && React.createElement('div', {
                     key: 'results',
-                    style: {
-                        padding: '20px',
-                        backgroundColor: '#f0f9ff',
-                        borderRadius: '6px',
-                        marginBottom: '20px'
-                    }
+                    style: { padding: '20px', backgroundColor: '#f0f9ff', borderRadius: '6px', marginBottom: '20px' }
                 }, [
                     React.createElement('div', {
                         key: 'summary',
@@ -539,13 +585,7 @@
                 }, [
                     React.createElement('div', {
                         key: 'info',
-                        style: {
-                            padding: '16px',
-                            backgroundColor: '#fff7e6',
-                            borderRadius: '6px',
-                            marginBottom: '16px',
-                            border: '1px solid #ffd666'
-                        }
+                        style: { padding: '16px', backgroundColor: '#fff7e6', borderRadius: '6px', marginBottom: '16px', border: '1px solid #ffd666' }
                     }, `即将重命名 ${Array.from(selectedFiles).filter(id => validationResults[id] === 'valid').length} 个文件，请确认后继续。`),
                     
                     React.createElement('div', {
@@ -554,11 +594,7 @@
                     }, files.filter(file => selectedFiles.has(file.id) && validationResults[file.id] === 'valid').map(file =>
                         React.createElement('div', {
                             key: file.id,
-                            style: {
-                                padding: '8px',
-                                borderBottom: '1px solid #f0f0f0',
-                                fontSize: '14px'
-                            }
+                            style: { padding: '8px', borderBottom: '1px solid #f0f0f0', fontSize: '14px' }
                         }, [
                             React.createElement('div', { key: 'old', style: { color: '#909399' } }, `原名: ${file.name}`),
                             React.createElement('div', { key: 'new', style: { color: '#67c23a' } }, `新名: ${newNames[file.id]}`)
@@ -572,44 +608,64 @@
                 }, [
                     // 工具栏
                     React.createElement('div', {
-                        key: 'toolbar',
+                        key: 'toolbar-wrapper',
                         style: {
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            marginBottom: '16px',
                             padding: '12px',
                             backgroundColor: '#f8f9fa',
-                            borderRadius: '6px'
+                            borderRadius: '6px',
+                            marginBottom: '16px'
                         }
                     }, [
                         React.createElement('div', {
-                            key: 'select',
-                            style: { display: 'flex', alignItems: 'center' }
+                            key: 'toolbar-main',
+                            style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' }
                         }, [
-                            React.createElement('input', {
-                                key: 'selectall',
-                                type: 'checkbox',
-                                onChange: (e) => handleSelectAll(e.target.checked),
-                                style: { marginRight: '8px' }
-                            }),
-                            React.createElement('span', { key: 'label' }, '全选')
+                            React.createElement('div', { key: 'select-all', style: { display: 'flex', alignItems: 'center' } }, [
+                                React.createElement('input', {
+                                    key: 'selectall-cb', type: 'checkbox',
+                                    onChange: (e) => handleSelectAll(e.target.checked),
+                                    style: { marginRight: '8px' }
+                                }),
+                                React.createElement('span', { key: 'label' }, '全选')
+                            ]),
+                            React.createElement('div', { key: 'sort-controls', style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [
+                                React.createElement('select', {
+                                    value: sortBy,
+                                    onChange: e => setSortBy(e.target.value),
+                                    style: { padding: '4px', borderRadius: '4px', border: '1px solid #dcdfe6' }
+                                }, [
+                                    React.createElement('option', { value: 'name' }, '名称'),
+                                    React.createElement('option', { value: 'created_time' }, '创建时间'),
+                                    React.createElement('option', { value: 'modified_time' }, '修改时间'),
+                                    React.createElement('option', { value: 'size' }, '大小')
+                                ]),
+                                React.createElement('select', {
+                                    value: sortDirection,
+                                    onChange: e => setSortDirection(e.target.value),
+                                    style: { padding: '4px', borderRadius: '4px', border: '1px solid #dcdfe6' }
+                                }, [
+                                    React.createElement('option', { value: 'asc' }, '升序'),
+                                    React.createElement('option', { value: 'desc' }, '降序')
+                                ])
+                            ]),
+                            React.createElement('div', { key: 'actions', style: { display: 'flex', gap: '8px' } }, [
+                                createButton('validate', 
+                                    isValidating ? '扫描中...' : (selectedFiles.size === 0 ? '请选择文件' : '扫描番号'),
+                                    validateFiles, 'primary', isValidating || selectedFiles.size === 0),
+                                React.createElement('button', {
+                                    key: 'config-toggle', onClick: () => setShowConfigPanel(!showConfigPanel), title: '配置选项',
+                                    style: { padding: '8px', backgroundColor: showConfigPanel ? '#e9ecef' : 'transparent', color: STYLES.text.secondary, border: '1px solid #dcdfe6', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }
+                                }, React.createElement('svg', { width: '16', height: '16', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: '2' }, [
+                                    React.createElement('circle', { cx: '12', cy: '12', r: '3' }),
+                                    React.createElement('path', { d: 'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z' })
+                                ]))
+                            ])
                         ]),
-                        React.createElement('div', {
-                            key: 'buttons',
-                            style: { display: 'flex', gap: '8px' }
-                        }, [
-                            createButton('validate', 
-                                isValidating ? '扫描中...' : (selectedFiles.size === 0 ? '请选择文件' : '扫描番号'),
-                                validateFiles, 'primary', isValidating || selectedFiles.size === 0),
-                            React.createElement('button', {
-                                key: 'config', onClick: () => setShowConfigDialog(true), title: '配置选项',
-                                style: { padding: '8px', backgroundColor: 'transparent', color: STYLES.text.secondary, border: '1px solid #dcdfe6', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }
-                            }, React.createElement('svg', { width: '16', height: '16', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: '2' }, [
-                                React.createElement('circle', { key: 'c1', cx: '12', cy: '12', r: '3' }),
-                                React.createElement('path', { key: 'p1', d: 'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z' })
-                            ]))
-                        ])
+                        showConfigPanel && React.createElement(ConfigPanel, {
+                            key: 'config-panel',
+                            config: config,
+                            onConfigChange: handleConfigChange
+                        })
                     ]),
 
                     // 文件项
@@ -623,7 +679,8 @@
                             selected: selectedFiles.has(file.id),
                             onSelect: handleFileSelect,
                             validationStatus: validationResults[file.id],
-                            newName: newNames[file.id]
+                            newName: newNames[file.id],
+                            sortBy: sortBy
                         })
                     ))
                 ])
@@ -660,23 +717,14 @@
                     !showConfirmation ? [
                         createButton('cancel', '取消', () => { resetModal(); onClose(); }, 'secondary'),
                         createButton('next', '下一步', () => setShowConfirmation(true), 'primary', 
-                            selectedFiles.size === 0 || Object.keys(validationResults).length === 0)
+                            selectedFiles.size === 0 || Object.values(validationResults).every(s => s !== 'valid'))
                     ] : [
                         createButton('back', '上一步', () => setShowConfirmation(false), 'secondary', isRenaming),
                         createButton('confirm', isRenaming ? '重命名中...' : '确认重命名', 
                             performBatchRename, 'primary', isRenaming)
                     ]
                 ])
-            ]),
-
-            // 配置对话框
-            React.createElement(ConfigDialog, {
-                key: 'config-dialog',
-                isOpen: showConfigDialog,
-                onClose: () => setShowConfigDialog(false),
-                config: config,
-                onConfigChange: setConfig
-            })
+            ])
         ]));
     };
 
