@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>PikPak 番号提取测试</title>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace; 
+            margin: 20px; 
+            background: #f8f9fa;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        .summary {
+            background: #e9ecef;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 20px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .test { 
+            margin: 15px 0; 
+            padding: 15px; 
+            border-left: 4px solid #ccc; 
+            border-radius: 0 6px 6px 0;
+            background: #f8f9fa;
+        }
+        .pass { 
+            border-color: #28a745; 
+            background: #d4edda; 
+        }
+        .fail { 
+            border-color: #dc3545; 
+            background: #f8d7da; 
+        }
+        .test h3 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+        }
+        .section { 
+            margin: 8px 0; 
+            padding: 8px;
+            background: rgba(255,255,255,0.7);
+            border-radius: 4px;
+        }
+        .section strong {
+            display: inline-block;
+            width: 80px;
+            font-weight: 600;
+        }
+        .expected { 
+            color: #666; 
+            font-size: 13px;
+            margin: 2px 0;
+        }
+        .actual { 
+            color: #000; 
+            font-size: 13px;
+            margin: 2px 0;
+        }
+        .error { 
+            color: #dc3545; 
+        }
+        .status-icon {
+            font-size: 14px;
+            margin-right: 5px;
+        }
+        .loading {
+            color: #6c757d;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>PikPak 番号提取测试</h1>
+        <div id="summary" class="summary">
+            <span class="loading">正在加载测试用例...</span>
+        </div>
+        <div id="results"></div>
+    </div>
+
+    <script type="module">
+        import { extractKeyword, predictDirectAccess, getSearchFallback, queryAVwiki, getFallbackDetailUrl } from '../src/core-functions.js';
+
+        async function runTests() {
+            try {
+                const response = await fetch('./test-cases.json');
+                const testCases = await response.json();
+                const results = document.getElementById('results');
+                const summary = document.getElementById('summary');
+                
+                let passCount = 0;
+                let failCount = 0;
+
+                // 使用 Promise.all 处理异步测试
+                const testPromises = testCases.map(async (testCase, index) => {
+                    const div = document.createElement('div');
+                    
+                    // 使用测试用例中的 isFile 字段，而不是硬编码 false
+                    const isFile = testCase.isFile || false;
+                    const extractResult = extractKeyword(testCase.fileName, isFile);
+                    const directResult = extractResult ? predictDirectAccess(extractResult.keyword) : predictDirectAccess('');
+                    const fallbackResult = extractResult ? getSearchFallback(extractResult.originalMatch) : getSearchFallback('');
+                    
+                    // 运行异步 AV-wiki 测试
+                    let avwikiResult = null;
+                    let avwikiPass = true;
+                    let fallbackDetailUrl = null;
+                    
+                    if (extractResult && extractResult.keyword) {
+                        try {
+                            fallbackDetailUrl = await getFallbackDetailUrl(extractResult.originalMatch);
+                            avwikiResult = await queryAVwiki(extractResult);
+                            avwikiPass = compareResults(avwikiResult, testCase.avwikiResult);
+                        } catch (error) {
+                            avwikiResult = null;
+                            avwikiPass = testCase.avwikiResult === null;
+                        }
+                    } else {
+                        avwikiPass = testCase.avwikiResult === null;
+                    }
+                    
+                    // 检查结果
+                    const extractPass = compareResults(extractResult, testCase.extractResult);
+                    const directPass = compareResults(directResult, testCase.directAccess);
+                    const fallbackPass = compareResults(fallbackResult, testCase.searchFallback);
+                    const fallbackDetailPass = compareResults(fallbackDetailUrl, testCase.fallbackDetailUrl);
+                    
+                    const allPass = extractPass && directPass && fallbackPass && fallbackDetailPass && avwikiPass;
+                    
+                    div.className = `test ${allPass ? 'pass' : 'fail'}`;
+                    div.innerHTML = `
+                        <h3>${allPass ? '✅' : '❌'} 测试 ${index + 1}: ${testCase.fileName}</h3>
+                        <div style="margin-bottom: 10px; color: #666; font-size: 0.9em;">
+                            类型: ${isFile ? '📄 文件' : '📁 文件夹'}
+                        </div>
+                        
+                        <div class="section">
+                            <strong>提取格式:</strong> 
+                            <span class="status-icon">${extractPass ? '✅' : '❌'}</span>
+                            <div class="expected">期望: ${formatResult(testCase.extractResult)}</div>
+                            <div class="actual">实际: ${formatResult(extractResult)}</div>
+                        </div>
+                        
+                        <div class="section">
+                            <strong>直接访问:</strong> 
+                            <span class="status-icon">${directPass ? '✅' : '❌'}</span>
+                            <div class="expected">期望: ${formatResult(testCase.directAccess)}</div>
+                            <div class="actual">实际: ${formatResult(directResult)}</div>
+                        </div>
+                        
+                        <div class="section">
+                            <strong>回退搜索:</strong> 
+                            <span class="status-icon">${fallbackPass ? '✅' : '❌'}</span>
+                            <div class="expected">期望: ${formatResult(testCase.searchFallback)}</div>
+                            <div class="actual">实际: ${formatResult(fallbackResult)}</div>
+                        </div>
+                        
+                        <div class="section">
+                            <strong>回退搜索详情页:</strong> 
+                            <span class="status-icon">${fallbackDetailPass ? '✅' : '❌'}</span>
+                            <div class="expected">期望: ${formatResult(testCase.fallbackDetailUrl)}</div>
+                            <div class="actual">实际: ${formatResult(fallbackDetailUrl)}</div>
+                        </div>
+                        
+                        <div class="section">
+                            <strong>AV-wiki查询:</strong> 
+                            <span class="status-icon">${avwikiPass ? '✅' : '❌'}</span>
+                            <div class="expected">期望: ${formatResult(testCase.avwikiResult)}</div>
+                            <div class="actual">实际: ${formatResult(avwikiResult)}</div>
+                        </div>
+                    `;
+                    
+                    return { div, allPass };
+                });
+
+                // 等待所有测试完成
+                const testResults = await Promise.all(testPromises);
+                
+                // 添加结果到页面并统计
+                testResults.forEach(({ div, allPass }) => {
+                    if (allPass) passCount++;
+                    else failCount++;
+                    results.appendChild(div);
+                });
+
+                // 更新摘要
+                const total = passCount + failCount;
+                const passRate = ((passCount / total) * 100).toFixed(1);
+                summary.innerHTML = `
+                    <div>
+                        <strong>测试结果:</strong> 
+                        总计 ${total} 个，通过 ${passCount} 个，失败 ${failCount} 个
+                    </div>
+                    <div style="color: ${passCount === total ? '#28a745' : '#dc3545'}">
+                        通过率: ${passRate}%
+                    </div>
+                `;
+
+            } catch (error) {
+                document.getElementById('results').innerHTML = `
+                    <div class="test fail">
+                        <h3>❌ 加载测试失败</h3>
+                        <div class="error">错误: ${error.message}</div>
+                        <div style="margin-top: 10px; font-size: 13px;">
+                            请检查：<br>
+                            1. 是否使用 HTTP 服务器运行（如 Live Server）<br>
+                            2. core.js 和 test-cases.json 文件是否存在<br>
+                            3. 浏览器控制台是否有错误信息
+                        </div>
+                    </div>
+                `;
+                document.getElementById('summary').innerHTML = `
+                    <span style="color: #dc3545">加载失败</span>
+                `;
+            }
+        }
+
+        function compareResults(actual, expected) {
+            if (actual === null && expected === null) return true;
+            if (actual === null || expected === null) return false;
+            
+            // 如果expected是字符串，直接比较
+            if (typeof expected === 'string') {
+                return actual === expected;
+            }
+            
+            // 如果expected是对象，只比较期望结果中存在的字段
+            if (typeof expected === 'object' && expected !== null) {
+                // 特殊处理：如果expected.format === null，说明整个结果应该是null
+                if (expected.format === null) {
+                    return actual === null;
+                }
+                
+                for (const [key, expectedValue] of Object.entries(expected)) {
+                    if (actual[key] !== expectedValue) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            
+            return actual === expected;
+        }
+
+        function formatResult(result) {
+            if (result === null) return 'null';
+            if (typeof result === 'object') {
+                return Object.entries(result)
+                    .map(([key, value]) => `${key}: ${value}`)
+                    .join(' | ');
+            }
+            return String(result);
+        }
+
+        runTests();
+    </script>
+</body>
+</html>
