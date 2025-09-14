@@ -191,8 +191,19 @@ function httpRequest(options) {
             GM_xmlhttpRequest({
                 method: options.method || 'GET',
                 url: options.url,
-                onload: resolve,
-                onerror: reject
+                headers: options.headers || {},
+                onload: function(response) {
+                    resolve({
+                        status: response.status,
+                        responseText: response.responseText
+                    });
+                },
+                onerror: function(error) {
+                    reject(new Error(`Request failed: ${error.statusText || 'Network error'}`));
+                },
+                ontimeout: function() {
+                    reject(new Error('Request timeout'));
+                }
             });
         } else {
             // 测试环境中使用代理服务器
@@ -226,6 +237,88 @@ function parseDetailPage(responseText) {
         name = name.replace(/[\/:*?"<>|\x00-\x1F]/g, '_');
     }
     return { title: name, date: date };
+}
+
+// Query DMM API for title and date
+export function queryDMM(extractionResult, dmmConfig = null) {
+    return new Promise((resolve, reject) => {
+        if (!extractionResult?.keyword) {
+            return reject('Invalid extraction result provided.');
+        }
+
+        if (!dmmConfig && typeof window !== 'undefined' && window.PikPakRenamerConfig) {
+            dmmConfig = window.PikPakRenamerConfig.dmm;
+        }
+
+        if (!dmmConfig?.enabled) {
+            return reject('DMM query not enabled or configured');
+        }
+
+        if (!dmmConfig.apiId || !dmmConfig.affiliateId) {
+            return reject('DMM API configuration incomplete');
+        }
+        
+        const searchQuery = `${extractionResult.series}00${extractionResult.number}`;
+        const apiUrl = new URL('https://api.dmm.com/affiliate/v3/ItemList');
+        
+        apiUrl.searchParams.set('api_id', dmmConfig.apiId);
+        apiUrl.searchParams.set('affiliate_id', dmmConfig.affiliateId);
+        apiUrl.searchParams.set('site', 'FANZA');
+        apiUrl.searchParams.set('keyword', searchQuery);
+        apiUrl.searchParams.set('output', 'json');
+
+        console.log(`[queryDMM] Searching: ${searchQuery}`);
+
+        httpRequest({ method: "GET", url: apiUrl.toString() })
+            .then(response => {
+                if (response.status !== 200) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                let jsonData;
+                try {
+                    jsonData = JSON.parse(response.responseText);
+                } catch (parseError) {
+                    throw new Error('API response parsing failed');
+                }
+
+                if (jsonData.result?.status !== 200) {
+                    throw new Error(`API error: ${jsonData.result?.message || 'Unknown error'}`);
+                }
+
+                if (!jsonData.result?.items?.length) {
+                    throw new Error('No matching videos found');
+                }
+
+                const firstItem = jsonData.result.items[0];
+                let title = firstItem.title;
+                let date = firstItem.date;
+                
+                if (title) {
+                    title = title.replace(/[\/:*?"<>|\x00-\x1F]/g, '_');
+                }
+                
+                if (date?.includes(' ')) {
+                    date = date.split(' ')[0];
+                }
+                
+                if (!title) {
+                    throw new Error('API returned incomplete data');
+                }
+
+                const finalTitle = `【${extractionResult.keyword.toUpperCase()}】${title}`;
+                
+                console.log(`[queryDMM] Success: ${extractionResult.keyword} -> ${finalTitle}`);
+                resolve({ 
+                    title: finalTitle, 
+                    date: date || null
+                });
+            })
+            .catch(error => {
+                console.error(`[queryDMM] Failed: ${extractionResult.keyword}`, error);
+                reject(`DMM query failed: ${error.message}`);
+            });
+    });
 }
 
 // 查询AV-wiki获取标题和日期

@@ -4,11 +4,11 @@
 // @name:ja      PikPak バッチJAV リネームアシスタント
 // @name:zh-CN   PikPak 批量番号重命名助手
 // @namespace    https://github.com/CheerChen
-// @version      0.0.21
-// @description  Batch rename files and folders in PikPak with AV-wiki integration. Adds a button to open modal for selecting files, validating AV numbers, and batch renaming with progress tracking.
-// @description:en Batch rename files and folders in PikPak with AV-wiki integration. Adds a button to open modal for selecting files, validating AV numbers, and batch renaming with progress tracking.
-// @description:ja PikPakでAV-wiki統合による一括ファイル・フォルダーリネーム。ファイル選択、AV番号検証、進捗追跡付き一括リネーム用のモーダルを開くボタンを追加。
-// @description:zh-CN 在PikPak中批量重命名文件和文件夹，集成AV-wiki。添加按钮打开模态窗口进行文件选择、AV番号验证和批量重命名，并提供进度跟踪。
+// @version      0.0.29
+// @description  Batch rename video files and folders with JAV codes in PikPak.
+// @description:en Batch rename video files and folders with JAV codes in PikPak.
+// @description:ja PikPakで品番付きの動画ファイルやフォルダを一括リネーム。
+// @description:zh-CN 在 PikPak 中批量重命名带有番号的视频文件或者文件夹。
 // @author       cheerchen37
 // @match        *://*mypikpak.com/*
 // @require      https://unpkg.com/react@18/umd/react.production.min.js
@@ -17,6 +17,7 @@
 // @grant        GM_openInTab
 // @connect      av-wiki.net
 // @connect      api-drive.mypikpak.com
+// @connect      api.dmm.com
 // @icon         https://www.google.com/s2/favicons?domain=mypikpak.com
 // @license      MIT
 // @homepage     https://github.com/CheerChen/userscripts
@@ -340,8 +341,19 @@
                 GM_xmlhttpRequest({
                     method: options.method || 'GET',
                     url: options.url,
-                    onload: resolve,
-                    onerror: reject
+                    headers: options.headers || {},
+                    onload: function(response) {
+                        resolve({
+                            status: response.status,
+                            responseText: response.responseText
+                        });
+                    },
+                    onerror: function(error) {
+                        reject(new Error(`Request failed: ${error.statusText || 'Network error'}`));
+                    },
+                    ontimeout: function() {
+                        reject(new Error('Request timeout'));
+                    }
                 });
             } else {
                 // 测试环境中使用代理服务器
@@ -375,6 +387,88 @@
             name = name.replace(/[\/:*?"<>|\x00-\x1F]/g, '_');
         }
         return { title: name, date: date };
+    }
+
+    // Query DMM API for title and date
+    function queryDMM(extractionResult, dmmConfig = null) {
+        return new Promise((resolve, reject) => {
+            if (!extractionResult?.keyword) {
+                return reject('Invalid extraction result provided.');
+            }
+
+            if (!dmmConfig && typeof window !== 'undefined' && window.PikPakRenamerConfig) {
+                dmmConfig = window.PikPakRenamerConfig.dmm;
+            }
+
+            if (!dmmConfig?.enabled) {
+                return reject('DMM query not enabled or configured');
+            }
+
+            if (!dmmConfig.apiId || !dmmConfig.affiliateId) {
+                return reject('DMM API configuration incomplete');
+            }
+            
+            const searchQuery = `${extractionResult.series}00${extractionResult.number}`;
+            const apiUrl = new URL('https://api.dmm.com/affiliate/v3/ItemList');
+            
+            apiUrl.searchParams.set('api_id', dmmConfig.apiId);
+            apiUrl.searchParams.set('affiliate_id', dmmConfig.affiliateId);
+            apiUrl.searchParams.set('site', 'FANZA');
+            apiUrl.searchParams.set('keyword', searchQuery);
+            apiUrl.searchParams.set('output', 'json');
+
+            console.log(`[queryDMM] Searching: ${searchQuery}`);
+
+            httpRequest({ method: "GET", url: apiUrl.toString() })
+                .then(response => {
+                    if (response.status !== 200) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    let jsonData;
+                    try {
+                        jsonData = JSON.parse(response.responseText);
+                    } catch (parseError) {
+                        throw new Error('API response parsing failed');
+                    }
+
+                    if (jsonData.result?.status !== 200) {
+                        throw new Error(`API error: ${jsonData.result?.message || 'Unknown error'}`);
+                    }
+
+                    if (!jsonData.result?.items?.length) {
+                        throw new Error('No matching videos found');
+                    }
+
+                    const firstItem = jsonData.result.items[0];
+                    let title = firstItem.title;
+                    let date = firstItem.date;
+                    
+                    if (title) {
+                        title = title.replace(/[\/:*?"<>|\x00-\x1F]/g, '_');
+                    }
+                    
+                    if (date?.includes(' ')) {
+                        date = date.split(' ')[0];
+                    }
+                    
+                    if (!title) {
+                        throw new Error('API returned incomplete data');
+                    }
+
+                    const finalTitle = `【${extractionResult.keyword.toUpperCase()}】${title}`;
+                    
+                    console.log(`[queryDMM] Success: ${extractionResult.keyword} -> ${finalTitle}`);
+                    resolve({ 
+                        title: finalTitle, 
+                        date: date || null
+                    });
+                })
+                .catch(error => {
+                    console.error(`[queryDMM] Failed: ${extractionResult.keyword}`, error);
+                    reject(`DMM query failed: ${error.message}`);
+                });
+        });
     }
 
     // 查询AV-wiki获取标题和日期
@@ -460,9 +554,21 @@
     const CONFIG_KEY = 'pikpak-batch-renamer-config';
     const getConfig = () => {
         try {
-            return JSON.parse(localStorage.getItem(CONFIG_KEY)) || { addDatePrefix: false, fixFileExtension: true };
+            return JSON.parse(localStorage.getItem(CONFIG_KEY)) || { 
+                addDatePrefix: false, 
+                fixFileExtension: true,
+                useDMM: false,
+                dmmApiId: '',
+                dmmAffiliateId: ''
+            };
         } catch {
-            return { addDatePrefix: false, fixFileExtension: true };
+            return { 
+                addDatePrefix: false, 
+                fixFileExtension: true,
+                useDMM: false,
+                dmmApiId: '',
+                dmmAffiliateId: ''
+            };
         }
     };
     const setConfig = (config) => {
@@ -475,12 +581,36 @@
             {
                 key: 'addDatePrefix',
                 label: '在文件名开头增加发行日期',
-                desc: '启用后文件名格式为: {日期} {标题}，例如: 2025-09-12 标题名称.mp4'
+                desc: '启用后文件名格式为: {日期} {标题}，例如: 2025-09-12 标题名称.mp4',
+                type: 'checkbox'
             },
             {
                 key: 'fixFileExtension',
                 label: '修复文件扩展名',
-                desc: '当文件缺少扩展名时，根据文件MIME类型自动添加合适的扩展名'
+                desc: '当文件缺少扩展名时，根据文件MIME类型自动添加合适的扩展名',
+                type: 'checkbox'
+            },
+            {
+                key: 'useDMM',
+                label: '使用 DMM API 查询',
+                desc: '启用后将使用 DMM 官方 API 进行查询，需要配置 API ID 和 Affiliate ID',
+                type: 'checkbox'
+            },
+            {
+                key: 'dmmApiId',
+                label: 'DMM API ID',
+                desc: '从 DMM 官方申请的 API ID',
+                type: 'text',
+                placeholder: '请输入 DMM API ID',
+                dependsOn: 'useDMM'
+            },
+            {
+                key: 'dmmAffiliateId',
+                label: 'DMM Affiliate ID',
+                desc: '从 DMM 官方申请的 Affiliate ID',
+                type: 'text',
+                placeholder: '请输入 DMM Affiliate ID',
+                dependsOn: 'useDMM'
             }
         ];
 
@@ -499,19 +629,46 @@
                 borderTop: '1px solid #ebeef5'
             }
         },
-            configOptions.map((option, i) => React.createElement('div', { key: `config-option-${i}` }, [
-                React.createElement('label', { key: `option${i}`, style: { display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '8px 0' } }, [
-                    React.createElement('input', {
-                        key: 'checkbox',
-                        type: 'checkbox',
-                        checked: config[option.key],
-                        onChange: (e) => handleConfigChange({ ...config, [option.key]: e.target.checked }),
-                        style: { marginRight: '8px' }
-                    }),
-                    React.createElement('span', { key: 'label', style: { fontSize: '14px', color: STYLES.text.primary } }, option.label)
-                ]),
-                React.createElement('div', { key: `desc${i}`, style: { fontSize: '12px', color: STYLES.text.secondary, marginLeft: '24px', lineHeight: '1.4', marginBottom: '12px' } }, option.desc)
-            ]))
+            configOptions.map((option, i) => {
+                // 检查依赖条件
+                if (option.dependsOn && !config[option.dependsOn]) {
+                    return null;
+                }
+                
+                return React.createElement('div', { key: `config-option-${i}` }, [
+                    option.type === 'checkbox' ? [
+                        React.createElement('label', { key: `option${i}`, style: { display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '8px 0' } }, [
+                            React.createElement('input', {
+                                key: 'checkbox',
+                                type: 'checkbox',
+                                checked: config[option.key],
+                                onChange: (e) => handleConfigChange({ ...config, [option.key]: e.target.checked }),
+                                style: { marginRight: '8px' }
+                            }),
+                            React.createElement('span', { key: 'label', style: { fontSize: '14px', color: STYLES.text.primary } }, option.label)
+                        ]),
+                        React.createElement('div', { key: `desc${i}`, style: { fontSize: '12px', color: STYLES.text.secondary, marginLeft: '24px', lineHeight: '1.4', marginBottom: '12px' } }, option.desc)
+                    ] : [
+                        React.createElement('div', { key: `label${i}`, style: { fontSize: '14px', color: STYLES.text.primary, marginBottom: '4px' } }, option.label),
+                        React.createElement('input', {
+                            key: `input${i}`,
+                            type: 'text',
+                            value: config[option.key] || '',
+                            placeholder: option.placeholder || '',
+                            onChange: (e) => handleConfigChange({ ...config, [option.key]: e.target.value }),
+                            style: {
+                                width: '100%',
+                                padding: '6px 8px',
+                                border: '1px solid #dcdfe6',
+                                borderRadius: '4px',
+                                fontSize: '13px',
+                                marginBottom: '4px'
+                            }
+                        }),
+                        React.createElement('div', { key: `desc${i}`, style: { fontSize: '12px', color: STYLES.text.secondary, lineHeight: '1.4', marginBottom: '12px' } }, option.desc)
+                    ]
+                ]);
+            }).filter(Boolean)
         );
     };
 
@@ -602,6 +759,17 @@
         const [showConfigPanel, setShowConfigPanel] = useState(false);
         const [sortBy, setSortBy] = useState('name');
         const [sortDirection, setSortDirection] = useState('asc');
+
+        // 设置全局配置供core-functions使用
+        useEffect(() => {
+            window.PikPakRenamerConfig = {
+                dmm: {
+                    enabled: config.useDMM,
+                    apiId: config.dmmApiId,
+                    affiliateId: config.dmmAffiliateId
+                }
+            };
+        }, [config.useDMM, config.dmmApiId, config.dmmAffiliateId]);
 
         const sortFiles = (filesToSort, currentSortBy, currentSortDirection) => {
             const sorted = [...filesToSort].sort((a, b) => {
@@ -713,7 +881,15 @@
                     setValidationResults(prev => ({...prev, ...results}));
 
                     try {
-                        const result = await queryAVwiki(keyword);
+                        let result;
+                        if (config.useDMM && config.dmmApiId && config.dmmAffiliateId) {
+                            // 使用DMM API查询
+                            result = await queryDMM(keyword);
+                        } else {
+                            // 使用AV-wiki查询
+                            result = await queryAVwiki(keyword);
+                        }
+                        
                         results[file.id] = 'valid';
                         
                         let extension = '';

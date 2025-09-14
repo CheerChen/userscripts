@@ -94,7 +94,43 @@
     </div>
 
     <script type="module">
-        import { extractKeyword, predictDirectAccess, getSearchFallback, queryAVwiki, getFallbackDetailUrl } from '../src/core-functions.js';
+        import { extractKeyword, predictDirectAccess, getSearchFallback, queryAVwiki, queryDMM, getFallbackDetailUrl } from '../src/core-functions.js';
+
+        // 为测试环境提供 httpRequest 函数，通过代理服务器
+        window.httpRequest = function(options) {
+            return new Promise((resolve, reject) => {
+                const proxyUrl = `http://localhost:3001?url=${encodeURIComponent(options.url)}`;
+                
+                fetch(proxyUrl, {
+                    method: options.method || 'GET',
+                    headers: options.headers || {}
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                    return response.text();
+                })
+                .then(responseText => {
+                    resolve({
+                        status: 200,
+                        responseText: responseText
+                    });
+                })
+                .catch(error => {
+                    reject(error);
+                });
+            });
+        };
+
+        // 设置测试用的DMM配置 (使用测试用的假数据)
+        window.PikPakRenamerConfig = {
+            dmm: {
+                enabled: false, // 默认关闭，避免误用
+                apiId: 'TEST_API_ID', // 测试用假数据
+                affiliateId: 'TEST_AFFILIATE_ID' // 测试用假数据
+            }
+        };
 
         async function runTests() {
             try {
@@ -121,6 +157,10 @@
                     let avwikiPass = true;
                     let fallbackDetailUrl = null;
                     
+                    // 运行异步 DMM 测试
+                    let dmmResult = null;
+                    let dmmPass = true;
+                    
                     if (extractResult && extractResult.keyword) {
                         try {
                             fallbackDetailUrl = await getFallbackDetailUrl(extractResult.originalMatch);
@@ -130,8 +170,17 @@
                             avwikiResult = null;
                             avwikiPass = testCase.avwikiResult === null;
                         }
+                        
+                        try {
+                            dmmResult = await queryDMM(extractResult);
+                            dmmPass = compareResults(dmmResult, testCase.dmmResult);
+                        } catch (error) {
+                            dmmResult = null;
+                            dmmPass = testCase.dmmResult === null;
+                        }
                     } else {
                         avwikiPass = testCase.avwikiResult === null;
+                        dmmPass = testCase.dmmResult === null;
                     }
                     
                     // 检查结果
@@ -140,7 +189,7 @@
                     const fallbackPass = compareResults(fallbackResult, testCase.searchFallback);
                     const fallbackDetailPass = compareResults(fallbackDetailUrl, testCase.fallbackDetailUrl);
                     
-                    const allPass = extractPass && directPass && fallbackPass && fallbackDetailPass && avwikiPass;
+                    const allPass = extractPass && directPass && fallbackPass && fallbackDetailPass && avwikiPass && dmmPass;
                     
                     div.className = `test ${allPass ? 'pass' : 'fail'}`;
                     div.innerHTML = `
@@ -182,6 +231,13 @@
                             <span class="status-icon">${avwikiPass ? '✅' : '❌'}</span>
                             <div class="expected">期望: ${formatResult(testCase.avwikiResult)}</div>
                             <div class="actual">实际: ${formatResult(avwikiResult)}</div>
+                        </div>
+                        
+                        <div class="section">
+                            <strong>DMM查询:</strong> 
+                            <span class="status-icon">${dmmPass ? '✅' : '❌'}</span>
+                            <div class="expected">期望: ${formatResult(testCase.dmmResult)}</div>
+                            <div class="actual">实际: ${formatResult(dmmResult)}</div>
                         </div>
                     `;
                     
