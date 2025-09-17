@@ -332,13 +332,37 @@
             }
 
             if (activeTab === 'monthly') {
-                const sortedMonths = Object.keys(analysisData.monthly).sort();
+                const monthKeys = Object.keys(analysisData.monthly).sort();
+                if (monthKeys.length === 0) {
+                    setChartOption(null); // No data to display
+                    return;
+                }
+
+                const fullMonthRange = [];
+                const startDate = new Date(monthKeys[0] + '-01T00:00:00Z');
+                const endDate = new Date(monthKeys[monthKeys.length - 1] + '-01T00:00:00Z');
+
+                let currentDate = startDate;
+                while (currentDate <= endDate) {
+                    const year = currentDate.getUTCFullYear();
+                    const month = (currentDate.getUTCMonth() + 1).toString().padStart(2, '0');
+                    fullMonthRange.push(`${year}-${month}`);
+                    currentDate.setUTCMonth(currentDate.getUTCMonth() + 1);
+                }
+
+                const chartData = fullMonthRange.map(month => analysisData.monthly[month] || 0);
+
                 setChartOption({
                     title: { text: 'Items per Month' },
                     tooltip: { trigger: 'axis' },
-                    xAxis: { type: 'category', data: sortedMonths },
+                    xAxis: { type: 'category', data: fullMonthRange },
                     yAxis: { type: 'value' },
-                    series: [{ data: sortedMonths.map(m => analysisData.monthly[m]), type: 'bar' }],
+                    series: [{
+                        data: chartData,
+                        type: 'line',
+                        smooth: true,
+                        areaStyle: {}
+                    }],
                     dataZoom: [{ type: 'slider' }],
                 });
             } else {
