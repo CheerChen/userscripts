@@ -19,7 +19,7 @@
 // @updateURL    https://raw.githubusercontent.com/CheerChen/userscripts/master/confluence-jira-title-copy.user.js
 // ==/UserScript==
 
-(function() {
+(function () {
     'use strict';
 
     // Initialize script
@@ -138,28 +138,55 @@
 
     // Get Jira ticket ID from URL or page
     function getJiraTicketId() {
-        // First try to extract ticket ID from selectedIssue parameter in backlog URL
-        if (window.location.href.includes('/backlog') && window.location.href.includes('selectedIssue=')) {
-            const urlParams = new URLSearchParams(window.location.search);
-            const selectedIssue = urlParams.get('selectedIssue');
-            if (selectedIssue) {
-                return selectedIssue;
+        // 1. Try to extract ticket ID from URL parameters (backlog, modal, etc.)
+        const urlParams = new URLSearchParams(window.location.search);
+        for (const param of ['selectedIssue', 'modal', 'issueKey']) {
+            const value = urlParams.get(param);
+            if (value && /^[A-Z][A-Z0-9]+-\d+$/i.test(value)) {
+                return value;
             }
         }
 
-        // Try to extract ticket ID from /browse/ URL
-        const urlMatch = window.location.href.match(/\/browse\/([A-Z]+-\d+)/i);
+        // 2. Try to extract ticket ID from /browse/ URL
+        const urlMatch = window.location.href.match(/\/browse\/([A-Z][A-Z0-9]+-\d+)/i);
         if (urlMatch && urlMatch[1]) {
             return urlMatch[1];
         }
+
+        // 3. Try to extract from DOM elements (list view, board, etc.)
+        const selectors = [
+            'a[data-testid*="issue-key"]',
+            'a[data-testid*="issuekey"]',
+            '[data-testid*="issue-key"] a[href*="/browse/"]'
+        ];
+
+        for (const selector of selectors) {
+            const element = document.querySelector(selector);
+            if (element) {
+                // Try text content first
+                const text = element.textContent.trim();
+                if (/^[A-Z][A-Z0-9]+-\d+$/i.test(text)) {
+                    return text;
+                }
+                // Try href attribute
+                const href = element.getAttribute('href');
+                if (href) {
+                    const hrefMatch = href.match(/\/browse\/([A-Z][A-Z0-9]+-\d+)/i);
+                    if (hrefMatch && hrefMatch[1]) {
+                        return hrefMatch[1];
+                    }
+                }
+            }
+        }
+
         return '';
     }
 
     // Sanitize string for use as filename
     function sanitizeFilename(input) {
         return input.replace(/[\\/:*?"<>|[\]{}#%&+,;=@^`~]/g, '-')
-                    .replace(/\s+/g, ' ')
-                    .trim();
+            .replace(/\s+/g, ' ')
+            .trim();
     }
 
     // Add copy buttons to page
@@ -172,8 +199,8 @@
         }
         // Check if we're in Confluence
         else if (document.location.href.includes("/wiki/") ||
-                document.location.href.includes("/confluence/") ||
-                document.location.href.includes("/display/")) {
+            document.location.href.includes("/confluence/") ||
+            document.location.href.includes("/display/")) {
             addConfluenceButtons();
         }
     }
@@ -485,7 +512,7 @@
     }
 
     // Watch for DOM changes
-    const observer = new MutationObserver(function(mutations) {
+    const observer = new MutationObserver(function (mutations) {
         if (!document.getElementById('customCopyButton')) {
             addButtons();
         }
