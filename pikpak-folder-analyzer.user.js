@@ -21,7 +21,7 @@
 // @supportURL   https://github.com/CheerChen/userscripts/issues
 // ==/UserScript==
 
-(function() {
+(function () {
     'use strict';
 
     const { React, ReactDOM, echarts } = window;
@@ -34,9 +34,9 @@
     function getHeader() {
         let token = "";
         let captcha = "";
-        for (let i = 0; i < 40; i++) {
+        for (let i = 0; i < window.localStorage.length; i++) {
             let key = window.localStorage.key(i);
-            if (key === null) break;
+            if (key === null) continue;
             if (key && key.startsWith("credentials")) {
                 let tokenData = JSON.parse(window.localStorage.getItem(key));
                 token = tokenData.token_type + " " + tokenData.access_token;
@@ -47,9 +47,14 @@
                 captcha = tokenData.captcha_token;
             }
         }
+        // deviceid 格式为 "wdi10.xxxxx..."，需要提取点号后的前32位作为 x-device-id
+        let deviceId = window.localStorage.getItem("deviceid") || "";
+        if (deviceId.includes(".")) {
+            deviceId = deviceId.split(".")[1]?.substring(0, 32) || deviceId;
+        }
         return {
             Authorization: token,
-            "x-device-id": window.localStorage.getItem("deviceid") || "",
+            "x-device-id": deviceId,
             "x-captcha-token": captcha
         };
     }
@@ -95,7 +100,7 @@
                 }
             }
         }
-        
+
         return { date, title, actor, series };
     }
 
@@ -133,7 +138,7 @@
             if (!chartRef.current) return;
 
             chartInstance.current = echarts.init(chartRef.current);
-            
+
             const resizeObserver = new ResizeObserver(() => {
                 chartInstance.current?.resize();
             });
@@ -214,7 +219,7 @@
             window.WordCloud(cloudRef.current, options);
 
             return () => {
-                if(cloudRef.current) {
+                if (cloudRef.current) {
                     cloudRef.current.innerHTML = '';
                 }
             };
@@ -317,14 +322,14 @@
                 if (actor) actorCounts[actor] = (actorCounts[actor] || 0) + 1;
                 if (series) seriesCounts[series] = (seriesCounts[series] || 0) + 1;
             });
-            
+
             const sortedActors = Object.entries(actorCounts).sort(([, a], [, b]) => b - a);
             const sortedSeries = Object.entries(seriesCounts).sort(([, a], [, b]) => b - a);
 
             setAnalysisData({ monthly: monthlyCounts, actors: sortedActors, series: sortedSeries });
             setIsAnalyzing(false);
         }, []);
-        
+
         useEffect(() => {
             if (!analysisData) {
                 setChartOption(null);
@@ -372,28 +377,32 @@
 
         if (!isOpen) return null;
 
-        return React.createElement('div', { style: STYLES.overlay, onMouseMove: (e) => {
-            if(tooltip.visible) setTooltip(t => ({...t, x: e.pageX + 15, y: e.pageY + 15}))
-        } }, [
-            tooltip.visible && React.createElement('div', { style: {
-                position: 'absolute',
-                top: tooltip.y,
-                left: tooltip.x,
-                backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                color: 'white',
-                padding: '5px 10px',
-                borderRadius: '3px',
-                fontSize: '12px',
-                pointerEvents: 'none',
-                zIndex: 10001,
-            }}, tooltip.content),
+        return React.createElement('div', {
+            style: STYLES.overlay, onMouseMove: (e) => {
+                if (tooltip.visible) setTooltip(t => ({ ...t, x: e.pageX + 15, y: e.pageY + 15 }))
+            }
+        }, [
+            tooltip.visible && React.createElement('div', {
+                style: {
+                    position: 'absolute',
+                    top: tooltip.y,
+                    left: tooltip.x,
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    color: 'white',
+                    padding: '5px 10px',
+                    borderRadius: '3px',
+                    fontSize: '12px',
+                    pointerEvents: 'none',
+                    zIndex: 10001,
+                }
+            }, tooltip.content),
 
             React.createElement('div', { style: STYLES.modal }, [
                 React.createElement('div', { key: 'header', style: STYLES.header }, [
                     React.createElement('h2', { key: 'title', style: { margin: 0, fontSize: '18px' } }, 'Folder & File Analysis'),
                     React.createElement('button', { key: 'close', onClick: onClose, style: { background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer' } }, '×')
                 ]),
-                
+
                 !analysisData && !isAnalyzing && React.createElement('div', { key: 'start-view', style: { textAlign: 'center', padding: '40px 0' } }, [
                     React.createElement('h3', null, 'Analyze all items to generate statistics.'),
                     React.createElement('p', { style: { color: '#666', margin: '10px 0 20px' } }, 'This will scan the current directory and one level of subdirectories.'),
@@ -412,7 +421,7 @@
                         React.createElement('button', { onClick: () => setActiveTab('actors'), style: { ...STYLES.tabButton, ...(activeTab === 'actors' ? STYLES.activeTab : {}) } }, 'By Actor'),
                         React.createElement('button', { onClick: () => setActiveTab('series'), style: { ...STYLES.tabButton, ...(activeTab === 'series' ? STYLES.activeTab : {}) } }, 'By Series')
                     ]),
-                    React.createElement('div', { key: 'chart', style: STYLES.chartContainer }, 
+                    React.createElement('div', { key: 'chart', style: STYLES.chartContainer },
                         activeTab === 'monthly' && React.createElement(EChart, { option: chartOption, isLoading: isAnalyzing }),
                         activeTab === 'actors' && React.createElement(WordCloudComponent, { data: analysisData.actors, onHover: handleWordCloudHover }),
                         activeTab === 'series' && React.createElement(WordCloudComponent, { data: analysisData.series, onHover: handleWordCloudHover })
@@ -437,18 +446,18 @@
                     </span>
                     <span class="label">文件夹统计</span>
                 </a>`;
-            
+
             analyzerItem.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                
+
                 let modalContainer = document.getElementById('pikpak-folder-analyzer-modal');
                 if (!modalContainer) {
                     modalContainer = document.createElement('div');
                     modalContainer.id = 'pikpak-folder-analyzer-modal';
                     document.body.appendChild(modalContainer);
                 }
-                
+
                 const root = createRoot(modalContainer);
                 const handleClose = () => {
                     root.unmount();
@@ -458,7 +467,7 @@
                 };
                 root.render(React.createElement(AnalysisModal, { isOpen: true, onClose: handleClose }));
             });
-            
+
             const divider = fileOps.querySelector('.divider-in-operations');
             fileOps.insertBefore(analyzerItem, divider || null);
         } else {

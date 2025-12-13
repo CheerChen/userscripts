@@ -4,7 +4,7 @@
 // @name:ja      PikPak バッチJAV リネームアシスタント
 // @name:zh-CN   PikPak 批量番号重命名助手
 // @namespace    https://github.com/CheerChen
-// @version      0.0.29
+// @version      0.0.30
 // @description  Batch rename video files and folders with JAV codes in PikPak.
 // @description:en Batch rename video files and folders with JAV codes in PikPak.
 // @description:ja PikPakで品番付きの動画ファイルやフォルダを一括リネーム。
@@ -25,7 +25,7 @@
 // @updateURL    https://raw.githubusercontent.com/CheerChen/userscripts/master/pikpak-batch-renamer/dist/pikpak-batch-renamer.user.js
 // ==/UserScript==
 
-(function() {
+(function () {
     'use strict';
 
     const { React, ReactDOM } = window;
@@ -38,9 +38,9 @@
     function getHeader() {
         let token = "";
         let captcha = "";
-        for (let i = 0; i < 40; i++) {
+        for (let i = 0; i < window.localStorage.length; i++) {
             let key = window.localStorage.key(i);
-            if (key === null) break;
+            if (key === null) continue;
             if (key && key.startsWith("credentials")) {
                 let tokenData = JSON.parse(window.localStorage.getItem(key));
                 token = tokenData.token_type + " " + tokenData.access_token;
@@ -51,9 +51,14 @@
                 captcha = tokenData.captcha_token;
             }
         }
+        // deviceid 格式为 "wdi10.xxxxx..."，需要提取点号后的前32位作为 x-device-id
+        let deviceId = window.localStorage.getItem("deviceid") || "";
+        if (deviceId.includes(".")) {
+            deviceId = deviceId.split(".")[1]?.substring(0, 32) || deviceId;
+        }
         return {
             Authorization: token,
-            "x-device-id": window.localStorage.getItem("deviceid"),
+            "x-device-id": deviceId,
             "x-captcha-token": captcha
         };
     }
@@ -88,7 +93,7 @@
             })
         }).then(async response => {
             const data = await response.json();
-            
+
             // 检查是否有错误
             if (data.error || !response.ok) {
                 const error = new Error(getErrorMessage(data.error, data.error_description));
@@ -96,7 +101,7 @@
                 error.details = data;
                 throw error;
             }
-            
+
             return data;
         });
     }
@@ -144,7 +149,7 @@
             // 默认二进制文件
             'application/octet-stream': '.bin'
         };
-        
+
         return mimeToExt[mimeType] || '';
     }
 
@@ -523,7 +528,7 @@
     }
 
 
-    
+
 
     // 延迟函数
     const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -554,16 +559,16 @@
     const CONFIG_KEY = 'pikpak-batch-renamer-config';
     const getConfig = () => {
         try {
-            return JSON.parse(localStorage.getItem(CONFIG_KEY)) || { 
-                addDatePrefix: false, 
+            return JSON.parse(localStorage.getItem(CONFIG_KEY)) || {
+                addDatePrefix: false,
                 fixFileExtension: true,
                 useDMM: false,
                 dmmApiId: '',
                 dmmAffiliateId: ''
             };
         } catch {
-            return { 
-                addDatePrefix: false, 
+            return {
+                addDatePrefix: false,
                 fixFileExtension: true,
                 useDMM: false,
                 dmmApiId: '',
@@ -634,7 +639,7 @@
                 if (option.dependsOn && !config[option.dependsOn]) {
                     return null;
                 }
-                
+
                 return React.createElement('div', { key: `config-option-${i}` }, [
                     option.type === 'checkbox' ? [
                         React.createElement('label', { key: `option${i}`, style: { display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '8px 0' } }, [
@@ -740,7 +745,7 @@
         const btnStyle = { ...STYLES.button };
         if (disabled) Object.assign(btnStyle, STYLES.disabledBtn);
         else Object.assign(btnStyle, STYLES[styleType + 'Btn']);
-        
+
         return React.createElement('button', { key, onClick, disabled, style: btnStyle }, text);
     };
 
@@ -803,12 +808,12 @@
             });
             setFiles(sorted);
         };
-        
+
         useEffect(() => {
             if (isOpen) {
                 let parent_id = window.location.href.split("/").pop();
                 if (parent_id === "all") parent_id = "";
-                
+
                 getList(parent_id).then(res => {
                     if (res.files) {
                         sortFiles(res.files, sortBy, sortDirection);
@@ -861,14 +866,14 @@
             setIsValidating(true);
             const results = {};
             const names = {};
-            
+
             const selectedFilesList = files.filter(file => selectedFiles.has(file.id));
             const batchSize = 3;
             const delay_ms = 2000;
 
             for (let i = 0; i < selectedFilesList.length; i += batchSize) {
                 const batch = selectedFilesList.slice(i, i + batchSize);
-                
+
                 await Promise.all(batch.map(async (file) => {
                     const isFile = file.kind !== 'drive#folder';
                     const keyword = extractKeyword(file.name, isFile);
@@ -878,7 +883,7 @@
                     }
 
                     results[file.id] = 'loading';
-                    setValidationResults(prev => ({...prev, ...results}));
+                    setValidationResults(prev => ({ ...prev, ...results }));
 
                     try {
                         let result;
@@ -889,31 +894,31 @@
                             // 使用AV-wiki查询
                             result = await queryAVwiki(keyword);
                         }
-                        
+
                         results[file.id] = 'valid';
-                        
+
                         let extension = '';
                         if (isFile) {
                             const extensionMatch = file.name.match(/(\.[^.]+)$/);
                             extension = extensionMatch ? extensionMatch[1] : '';
-                            
+
                             if (!extension && config.fixFileExtension && file.mime_type) {
                                 extension = getExtensionByMimeType(file.mime_type);
                             }
                         }
-                        
+
                         let finalName = config.addDatePrefix && result.date
                             ? `${result.date} ${result.title}`
                             : result.title;
-                        
+
                         names[file.id] = extension ? `${finalName}${extension}` : finalName;
                     } catch (error) {
                         results[file.id] = 'invalid';
                     }
                 }));
 
-                setValidationResults(prev => ({...prev, ...results}));
-                setNewNames(prev => ({...prev, ...names}));
+                setValidationResults(prev => ({ ...prev, ...results }));
+                setNewNames(prev => ({ ...prev, ...names }));
 
                 if (i + batchSize < selectedFilesList.length) {
                     await delay(delay_ms);
@@ -926,10 +931,10 @@
         // 执行批量重命名
         const performBatchRename = async () => {
             setIsRenaming(true);
-            const selectedFilesList = files.filter(file => 
+            const selectedFilesList = files.filter(file =>
                 selectedFiles.has(file.id) && validationResults[file.id] === 'valid'
             );
-            
+
             const total = selectedFilesList.length;
             let success = 0;
             let failed = 0;
@@ -940,10 +945,10 @@
 
             for (let i = 0; i < selectedFilesList.length; i += batchSize) {
                 const batch = selectedFilesList.slice(i, i + batchSize);
-                
+
                 await Promise.all(batch.map(async (file) => {
                     const newName = newNames[file.id];
-                    
+
                     if (file.name === newName) {
                         success++;
                         setProgress({ current: success + failed, total });
@@ -955,13 +960,13 @@
                         success++;
                     } catch (error) {
                         failed++;
-                        failedFiles.push({ 
-                            name: file.name, 
+                        failedFiles.push({
+                            name: file.name,
                             error: error.message,
                             code: error.code || 'unknown'
                         });
                     }
-                    
+
                     setProgress({ current: success + failed, total });
                 }));
 
@@ -989,14 +994,14 @@
         if (!isOpen) return null;
 
         return React.createElement('div', { style: { ...STYLES.overlay, zIndex: 10000 } },
-            React.createElement('div', { 
-                style: { 
+            React.createElement('div', {
+                style: {
                     ...STYLES.modal, width: '90%', maxWidth: '800px', maxHeight: '80vh',
                     display: 'flex', flexDirection: 'column'
                 }
             }, [
                 React.createElement('div', { key: 'header', style: STYLES.header }, [
-                    React.createElement('h2', { key: 'title', style: { margin: 0, color: STYLES.text.primary, fontSize: '18px' } }, 
+                    React.createElement('h2', { key: 'title', style: { margin: 0, color: STYLES.text.primary, fontSize: '18px' } },
                         renameResults ? '重命名完成' : (showConfirmation ? '确认重命名' : '批量重命名文件')),
                     React.createElement('button', {
                         key: 'close',
@@ -1010,178 +1015,178 @@
                     }, '×')
                 ]),
 
-            // 内容区域
-            React.createElement('div', {
-                key: 'content',
-                style: { flex: 1, overflowY: 'auto' }
-            }, [
-                // 结果显示
-                renameResults && React.createElement('div', {
-                    key: 'results',
-                    style: { padding: '20px', backgroundColor: '#f0f9ff', borderRadius: '6px', marginBottom: '20px' }
+                // 内容区域
+                React.createElement('div', {
+                    key: 'content',
+                    style: { flex: 1, overflowY: 'auto' }
                 }, [
-                    React.createElement('div', {
-                        key: 'summary',
-                        style: { fontSize: '16px', fontWeight: '500', marginBottom: '10px' }
-                    }, `重命名完成！成功: ${renameResults.success}, 失败: ${renameResults.failed}, 总计: ${renameResults.total}`),
-                    renameResults.failedFiles.length > 0 && React.createElement('div', {
-                        key: 'failed',
-                        style: { fontSize: '14px', color: '#f56c6c' }
+                    // 结果显示
+                    renameResults && React.createElement('div', {
+                        key: 'results',
+                        style: { padding: '20px', backgroundColor: '#f0f9ff', borderRadius: '6px', marginBottom: '20px' }
                     }, [
-                        React.createElement('div', { key: 'title' }, '失败的文件:'),
-                        ...renameResults.failedFiles.map((file, index) =>
-                            React.createElement('div', { key: index }, `${file.name}: ${file.error}`)
-                        )
+                        React.createElement('div', {
+                            key: 'summary',
+                            style: { fontSize: '16px', fontWeight: '500', marginBottom: '10px' }
+                        }, `重命名完成！成功: ${renameResults.success}, 失败: ${renameResults.failed}, 总计: ${renameResults.total}`),
+                        renameResults.failedFiles.length > 0 && React.createElement('div', {
+                            key: 'failed',
+                            style: { fontSize: '14px', color: '#f56c6c' }
+                        }, [
+                            React.createElement('div', { key: 'title' }, '失败的文件:'),
+                            ...renameResults.failedFiles.map((file, index) =>
+                                React.createElement('div', { key: index }, `${file.name}: ${file.error}`)
+                            )
+                        ])
+                    ]),
+
+                    // 确认页面
+                    showConfirmation && !renameResults && React.createElement('div', {
+                        key: 'confirmation'
+                    }, [
+                        React.createElement('div', {
+                            key: 'info',
+                            style: { padding: '16px', backgroundColor: '#fff7e6', borderRadius: '6px', marginBottom: '16px', border: '1px solid #ffd666' }
+                        }, `即将重命名 ${Array.from(selectedFiles).filter(id => validationResults[id] === 'valid').length} 个文件，请确认后继续。`),
+
+                        React.createElement('div', {
+                            key: 'preview',
+                            style: { maxHeight: '400px', overflowY: 'auto' }
+                        }, files.filter(file => selectedFiles.has(file.id) && validationResults[file.id] === 'valid').map(file =>
+                            React.createElement('div', {
+                                key: file.id,
+                                style: { padding: '8px', borderBottom: '1px solid #f0f0f0', fontSize: '14px' }
+                            }, [
+                                React.createElement('div', { key: 'old', style: { color: '#909399' } }, `原名: ${file.name}`),
+                                React.createElement('div', { key: 'new', style: { color: '#67c23a' } }, `新名: ${newNames[file.id]}`)
+                            ])
+                        ))
+                    ]),
+
+                    // 文件列表
+                    !showConfirmation && !renameResults && React.createElement('div', {
+                        key: 'filelist'
+                    }, [
+                        // 工具栏
+                        React.createElement('div', {
+                            key: 'toolbar-wrapper',
+                            style: {
+                                padding: '12px',
+                                backgroundColor: '#f8f9fa',
+                                borderRadius: '6px',
+                                marginBottom: '16px'
+                            }
+                        }, [
+                            React.createElement('div', {
+                                key: 'toolbar-main',
+                                style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' }
+                            }, [
+                                React.createElement('div', { key: 'select-all', style: { display: 'flex', alignItems: 'center' } }, [
+                                    React.createElement('input', {
+                                        key: 'selectall-cb', type: 'checkbox',
+                                        onChange: (e) => handleSelectAll(e.target.checked),
+                                        style: { marginRight: '8px' }
+                                    }),
+                                    React.createElement('span', { key: 'label' }, '全选')
+                                ]),
+                                React.createElement('div', { key: 'sort-controls', style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [
+                                    React.createElement('select', {
+                                        value: sortBy,
+                                        onChange: e => setSortBy(e.target.value),
+                                        style: { padding: '4px', borderRadius: '4px', border: '1px solid #dcdfe6' }
+                                    }, [
+                                        React.createElement('option', { value: 'name' }, '名称'),
+                                        React.createElement('option', { value: 'created_time' }, '创建时间'),
+                                        React.createElement('option', { value: 'modified_time' }, '修改时间'),
+                                        React.createElement('option', { value: 'size' }, '大小')
+                                    ]),
+                                    React.createElement('select', {
+                                        value: sortDirection,
+                                        onChange: e => setSortDirection(e.target.value),
+                                        style: { padding: '4px', borderRadius: '4px', border: '1px solid #dcdfe6' }
+                                    }, [
+                                        React.createElement('option', { value: 'asc' }, '升序'),
+                                        React.createElement('option', { value: 'desc' }, '降序')
+                                    ])
+                                ]),
+                                React.createElement('div', { key: 'actions', style: { display: 'flex', gap: '8px' } }, [
+                                    createButton('validate',
+                                        isValidating ? '扫描中...' : (selectedFiles.size === 0 ? '请选择文件' : '扫描番号'),
+                                        validateFiles, 'primary', isValidating || selectedFiles.size === 0),
+                                    React.createElement('button', {
+                                        key: 'config-toggle', onClick: () => setShowConfigPanel(!showConfigPanel), title: '配置选项',
+                                        style: { padding: '8px', backgroundColor: showConfigPanel ? '#e9ecef' : 'transparent', color: STYLES.text.secondary, border: '1px solid #dcdfe6', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }
+                                    }, React.createElement('svg', { width: '16', height: '16', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: '2' }, [
+                                        React.createElement('circle', { cx: '12', cy: '12', r: '3' }),
+                                        React.createElement('path', { d: 'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z' })
+                                    ]))
+                                ])
+                            ]),
+                            showConfigPanel && React.createElement(ConfigPanel, {
+                                key: 'config-panel',
+                                config: config,
+                                onConfigChange: handleConfigChange
+                            })
+                        ]),
+
+                        // 文件项
+                        React.createElement('div', {
+                            key: 'items',
+                            style: { maxHeight: '400px', overflowY: 'auto' }
+                        }, files.map(file =>
+                            React.createElement(FileItem, {
+                                key: file.id,
+                                file: file,
+                                selected: selectedFiles.has(file.id),
+                                onSelect: handleFileSelect,
+                                validationStatus: validationResults[file.id],
+                                newName: newNames[file.id],
+                                sortBy: sortBy
+                            })
+                        ))
                     ])
                 ]),
 
-                // 确认页面
-                showConfirmation && !renameResults && React.createElement('div', {
-                    key: 'confirmation'
-                }, [
-                    React.createElement('div', {
-                        key: 'info',
-                        style: { padding: '16px', backgroundColor: '#fff7e6', borderRadius: '6px', marginBottom: '16px', border: '1px solid #ffd666' }
-                    }, `即将重命名 ${Array.from(selectedFiles).filter(id => validationResults[id] === 'valid').length} 个文件，请确认后继续。`),
-                    
-                    React.createElement('div', {
-                        key: 'preview',
-                        style: { maxHeight: '400px', overflowY: 'auto' }
-                    }, files.filter(file => selectedFiles.has(file.id) && validationResults[file.id] === 'valid').map(file =>
-                        React.createElement('div', {
-                            key: file.id,
-                            style: { padding: '8px', borderBottom: '1px solid #f0f0f0', fontSize: '14px' }
-                        }, [
-                            React.createElement('div', { key: 'old', style: { color: '#909399' } }, `原名: ${file.name}`),
-                            React.createElement('div', { key: 'new', style: { color: '#67c23a' } }, `新名: ${newNames[file.id]}`)
-                        ])
-                    ))
-                ]),
-
-                // 文件列表
-                !showConfirmation && !renameResults && React.createElement('div', {
-                    key: 'filelist'
-                }, [
-                    // 工具栏
-                    React.createElement('div', {
-                        key: 'toolbar-wrapper',
-                        style: {
-                            padding: '12px',
-                            backgroundColor: '#f8f9fa',
-                            borderRadius: '6px',
-                            marginBottom: '16px'
-                        }
-                    }, [
-                        React.createElement('div', {
-                            key: 'toolbar-main',
-                            style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' }
-                        }, [
-                            React.createElement('div', { key: 'select-all', style: { display: 'flex', alignItems: 'center' } }, [
-                                React.createElement('input', {
-                                    key: 'selectall-cb', type: 'checkbox',
-                                    onChange: (e) => handleSelectAll(e.target.checked),
-                                    style: { marginRight: '8px' }
-                                }),
-                                React.createElement('span', { key: 'label' }, '全选')
-                            ]),
-                            React.createElement('div', { key: 'sort-controls', style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [
-                                React.createElement('select', {
-                                    value: sortBy,
-                                    onChange: e => setSortBy(e.target.value),
-                                    style: { padding: '4px', borderRadius: '4px', border: '1px solid #dcdfe6' }
-                                }, [
-                                    React.createElement('option', { value: 'name' }, '名称'),
-                                    React.createElement('option', { value: 'created_time' }, '创建时间'),
-                                    React.createElement('option', { value: 'modified_time' }, '修改时间'),
-                                    React.createElement('option', { value: 'size' }, '大小')
-                                ]),
-                                React.createElement('select', {
-                                    value: sortDirection,
-                                    onChange: e => setSortDirection(e.target.value),
-                                    style: { padding: '4px', borderRadius: '4px', border: '1px solid #dcdfe6' }
-                                }, [
-                                    React.createElement('option', { value: 'asc' }, '升序'),
-                                    React.createElement('option', { value: 'desc' }, '降序')
-                                ])
-                            ]),
-                            React.createElement('div', { key: 'actions', style: { display: 'flex', gap: '8px' } }, [
-                                createButton('validate', 
-                                    isValidating ? '扫描中...' : (selectedFiles.size === 0 ? '请选择文件' : '扫描番号'),
-                                    validateFiles, 'primary', isValidating || selectedFiles.size === 0),
-                                React.createElement('button', {
-                                    key: 'config-toggle', onClick: () => setShowConfigPanel(!showConfigPanel), title: '配置选项',
-                                    style: { padding: '8px', backgroundColor: showConfigPanel ? '#e9ecef' : 'transparent', color: STYLES.text.secondary, border: '1px solid #dcdfe6', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }
-                                }, React.createElement('svg', { width: '16', height: '16', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: '2' }, [
-                                    React.createElement('circle', { cx: '12', cy: '12', r: '3' }),
-                                    React.createElement('path', { d: 'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z' })
-                                ]))
-                            ])
-                        ]),
-                        showConfigPanel && React.createElement(ConfigPanel, {
-                            key: 'config-panel',
-                            config: config,
-                            onConfigChange: handleConfigChange
-                        })
-                    ]),
-
-                    // 文件项
-                    React.createElement('div', {
-                        key: 'items',
-                        style: { maxHeight: '400px', overflowY: 'auto' }
-                    }, files.map(file =>
-                        React.createElement(FileItem, {
-                            key: file.id,
-                            file: file,
-                            selected: selectedFiles.has(file.id),
-                            onSelect: handleFileSelect,
-                            validationStatus: validationResults[file.id],
-                            newName: newNames[file.id],
-                            sortBy: sortBy
-                        })
-                    ))
-                ])
-            ]),
-
-            // 底部按钮
-            React.createElement('div', {
-                key: 'footer',
-                style: {
-                    display: 'flex',
-                    justifyContent: 'flex-end',
-                    gap: '12px',
-                    marginTop: '20px',
-                    paddingTop: '16px',
-                    borderTop: '1px solid #ebeef5'
-                }
-            }, [
-                // 进度显示
-                isRenaming && React.createElement('div', {
-                    key: 'progress',
+                // 底部按钮
+                React.createElement('div', {
+                    key: 'footer',
                     style: {
-                        flex: 1,
                         display: 'flex',
-                        alignItems: 'center',
-                        color: '#606266'
+                        justifyContent: 'flex-end',
+                        gap: '12px',
+                        marginTop: '20px',
+                        paddingTop: '16px',
+                        borderTop: '1px solid #ebeef5'
                     }
-                }, `重命名进度: ${progress.current}/${progress.total}`),
-
-                // 按钮组
-                !renameResults && React.createElement('div', {
-                    key: 'buttons',
-                    style: { display: 'flex', gap: '12px' }
                 }, [
-                    !showConfirmation ? [
-                        createButton('cancel', '取消', () => { resetModal(); onClose(); }, 'secondary'),
-                        createButton('next', '下一步', () => setShowConfirmation(true), 'primary', 
-                            selectedFiles.size === 0 || Object.values(validationResults).every(s => s !== 'valid'))
-                    ] : [
-                        createButton('back', '上一步', () => setShowConfirmation(false), 'secondary', isRenaming),
-                        createButton('confirm', isRenaming ? '重命名中...' : '确认重命名', 
-                            performBatchRename, 'primary', isRenaming)
-                    ]
+                    // 进度显示
+                    isRenaming && React.createElement('div', {
+                        key: 'progress',
+                        style: {
+                            flex: 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            color: '#606266'
+                        }
+                    }, `重命名进度: ${progress.current}/${progress.total}`),
+
+                    // 按钮组
+                    !renameResults && React.createElement('div', {
+                        key: 'buttons',
+                        style: { display: 'flex', gap: '12px' }
+                    }, [
+                        !showConfirmation ? [
+                            createButton('cancel', '取消', () => { resetModal(); onClose(); }, 'secondary'),
+                            createButton('next', '下一步', () => setShowConfirmation(true), 'primary',
+                                selectedFiles.size === 0 || Object.values(validationResults).every(s => s !== 'valid'))
+                        ] : [
+                            createButton('back', '上一步', () => setShowConfirmation(false), 'secondary', isRenaming),
+                            createButton('confirm', isRenaming ? '重命名中...' : '确认重命名',
+                                performBatchRename, 'primary', isRenaming)
+                        ]
+                    ])
                 ])
-            ])
-        ]));
+            ]));
     };
 
 
@@ -1194,7 +1199,7 @@
         if (fileOperations) {
             // 检查是否已经添加过按钮
             if (fileOperations.querySelector('.batch-rename-button')) return;
-            
+
             // 创建按钮HTML结构
             const batchRenameItem = document.createElement('li');
             batchRenameItem.className = 'icon-with-label batch-rename-button';
@@ -1208,18 +1213,18 @@
                     <span class="label">批量重命名</span>
                 </a>
             `;
-            
+
             // 添加点击事件
             batchRenameItem.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                
+
                 // 创建模态窗口容器
                 if (!document.getElementById('pikpak-batch-renamer-modal')) {
                     const modalContainer = document.createElement('div');
                     modalContainer.id = 'pikpak-batch-renamer-modal';
                     document.body.appendChild(modalContainer);
-                    
+
                     const root = createRoot(modalContainer);
                     root.render(React.createElement(BatchRenameModal, {
                         isOpen: true,
@@ -1230,7 +1235,7 @@
                     }));
                 }
             });
-            
+
             // 查找合适的插入位置（在分割线之前）
             const divider = fileOperations.querySelector('.divider-in-operations');
             if (divider) {
