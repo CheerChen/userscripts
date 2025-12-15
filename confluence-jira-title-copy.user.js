@@ -8,7 +8,7 @@
 // @description:ja ボタンをクリックして、タイトルテキスト+リンクをマークダウン形式でコピーし、ファイル名としてコピーします。
 // @description:zh-CN 点击按钮以markdown格式复制标题文本+链接，以及复制为文件名
 // @namespace    https://github.com/CheerChen
-// @version      0.8.1
+// @version      0.8.2
 // @author      cheerchen37
 // @license     MIT
 // @match        *://*.atlassian.net/*
