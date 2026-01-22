@@ -11,6 +11,8 @@
 // @description:zh-CN 在 PikPak 中批量重命名带有番号的视频文件或者文件夹。
 // @author       cheerchen37
 // @match        *://*mypikpak.com/*
+// @match        *://*mypikpak.net/*
+// @match        *://*pikpak.me/*
 // @require      https://unpkg.com/react@18/umd/react.production.min.js
 // @require      https://unpkg.com/react-dom@18/umd/react-dom.production.min.js
 // @grant        GM_xmlhttpRequest

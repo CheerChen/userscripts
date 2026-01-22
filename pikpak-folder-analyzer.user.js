@@ -3,12 +3,14 @@
 // @name:en      PikPak Folder Analyzer
 // @name:zh-CN   PikPak 文件夹统计分析
 // @namespace    https://github.com/CheerChen
-// @version      0.1.0
+// @version      0.1.1
 // @description  Analyzes PikPak folders, extracts data based on a specific pattern, and visualizes it using charts.
 // @description:en Analyzes PikPak folders, extracts data based on a specific pattern, and visualizes it using charts.
 // @description:zh-CN 分析PikPak文件夹，根据特定模式提取数据，并使用图表进行可视化。
 // @author       cheerchen37
 // @match        *://*mypikpak.com/*
+// @match        *://*mypikpak.net/*
+// @match        *://*pikpak.me/*
 // @require      https://unpkg.com/react@18/umd/react.production.min.js
 // @require      https://unpkg.com/react-dom@18/umd/react-dom.production.min.js
 // @require      https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js
