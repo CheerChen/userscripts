@@ -1,14 +1,28 @@
 // ==UserScript==
-// @name         PikPak 批量番号重命名助手
+// @name         PikPak Batch JAV Renamer Assistant
 // @name:en      PikPak Batch JAV Renamer Assistant
 // @name:ja      PikPak バッチJAV リネームアシスタント
 // @name:zh-CN   PikPak 批量番号重命名助手
+// @name:zh-TW   PikPak 批量番號重命名助手
+// @name:ko      PikPak 일괄 JAV 이름 변경 도우미
+// @name:ru      PikPak Пакетное переименование JAV
+// @name:es      PikPak Renombrador JAV por lotes
+// @name:pt-BR   PikPak Renomeador JAV em lote
+// @name:fr      PikPak Renommeur JAV par lots
+// @name:de      PikPak JAV-Batch-Umbenennung
 // @namespace    https://github.com/CheerChen
-// @version      0.0.32
+// @version      0.0.35
 // @description  Batch rename video files and folders with JAV codes in PikPak.
 // @description:en Batch rename video files and folders with JAV codes in PikPak.
 // @description:ja PikPakで品番付きの動画ファイルやフォルダを一括リネーム。
 // @description:zh-CN 在 PikPak 中批量重命名带有番号的视频文件或者文件夹。
+// @description:zh-TW 在 PikPak 中批量重新命名帶有番號的影片檔案或資料夾。
+// @description:ko PikPak에서 JAV 코드가 포함된 비디오 파일과 폴더를 일괄 이름 변경합니다.
+// @description:ru Пакетное переименование видеофайлов и папок с кодами JAV в PikPak.
+// @description:es Renombrar por lotes archivos de video y carpetas con códigos JAV en PikPak.
+// @description:pt-BR Renomear em lote arquivos de vídeo e pastas com códigos JAV no PikPak.
+// @description:fr Renommer par lots les fichiers vidéo et dossiers avec des codes JAV dans PikPak.
+// @description:de Batch-Umbenennung von Videodateien und Ordnern mit JAV-Codes in PikPak.
 // @author       cheerchen37
 // @match        *://*mypikpak.com/*
 // @match        *://*mypikpak.net/*
@@ -813,7 +827,7 @@
 
         useEffect(() => {
             if (isOpen) {
-                let parent_id = window.location.href.split("/").pop();
+                let parent_id = window.location.pathname.split("/").pop();
                 if (parent_id === "all") parent_id = "";
 
                 getList(parent_id).then(res => {

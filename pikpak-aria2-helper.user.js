@@ -1,12 +1,28 @@
 // ==UserScript==
-// @name         PikPak Aria2 助手
+// @name         PikPak Aria2 Helper
 // @name:en      PikPak Aria2 Helper
+// @name:ja      PikPak Aria2 ヘルパー
 // @name:zh-CN   PikPak Aria2 助手
+// @name:zh-TW   PikPak Aria2 助手
+// @name:ko      PikPak Aria2 도우미
+// @name:ru      PikPak Aria2 Помощник
+// @name:es      PikPak Aria2 Ayudante
+// @name:pt-BR   PikPak Aria2 Auxiliar
+// @name:fr      PikPak Aria2 Assistant
+// @name:de      PikPak Aria2 Helfer
 // @namespace    https://github.com/CheerChen
-// @version      0.0.2
+// @version      0.0.3
 // @description  Push PikPak files and folders to Aria2 for downloading.
 // @description:en Push PikPak files and folders to Aria2 for downloading.
+// @description:ja PikPakのファイルとフォルダをAria2にプッシュしてダウンロードします。
 // @description:zh-CN 将 PikPak 文件和文件夹推送到 Aria2 进行下载。
+// @description:zh-TW 將 PikPak 檔案和資料夾推送到 Aria2 進行下載。
+// @description:ko PikPak 파일과 폴더를 Aria2로 푸시하여 다운로드합니다.
+// @description:ru Отправка файлов и папок PikPak в Aria2 для скачивания.
+// @description:es Enviar archivos y carpetas de PikPak a Aria2 para descargar.
+// @description:pt-BR Enviar arquivos e pastas do PikPak para o Aria2 para download.
+// @description:fr Envoyer les fichiers et dossiers PikPak vers Aria2 pour le téléchargement.
+// @description:de PikPak-Dateien und -Ordner zum Herunterladen an Aria2 senden.
 // @author       cheerchen37
 // @match        *://*mypikpak.com/*
 // @match        *://*mypikpak.net/*
@@ -542,7 +558,7 @@
         // Load file list
         useEffect(() => {
             if (isOpen) {
-                let parent_id = window.location.href.split("/").pop();
+                let parent_id = window.location.pathname.split("/").pop();
                 if (parent_id === "all") parent_id = "";
 
                 showToast('正在加载文件列表...', 'info');
