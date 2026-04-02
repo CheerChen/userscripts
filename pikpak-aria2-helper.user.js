@@ -11,7 +11,7 @@
 // @name:fr      PikPak Aria2 Assistant
 // @name:de      PikPak Aria2 Helfer
 // @namespace    https://github.com/CheerChen
-// @version      0.0.3
+// @version      0.0.4
 // @description  Push PikPak files and folders to Aria2 for downloading.
 // @description:en Push PikPak files and folders to Aria2 for downloading.
 // @description:ja PikPakのファイルとフォルダをAria2にプッシュしてダウンロードします。
@@ -153,22 +153,20 @@
     // ==================== Config Management ====================
 
     const CONFIG_KEY = 'pikpak-aria2-helper-config';
+    const DEFAULT_CONFIG = {
+        rpcUrl: 'http://127.0.0.1:6800/jsonrpc',
+        rpcToken: '',
+        downloadPath: '',
+        customParams: '',
+        sortBy: 'name',
+        sortDirection: 'asc'
+    };
 
     const getConfig = () => {
         try {
-            return JSON.parse(localStorage.getItem(CONFIG_KEY)) || {
-                rpcUrl: 'http://127.0.0.1:6800/jsonrpc',
-                rpcToken: '',
-                downloadPath: '',
-                customParams: ''
-            };
+            return { ...DEFAULT_CONFIG, ...(JSON.parse(localStorage.getItem(CONFIG_KEY)) || {}) };
         } catch {
-            return {
-                rpcUrl: 'http://127.0.0.1:6800/jsonrpc',
-                rpcToken: '',
-                downloadPath: '',
-                customParams: ''
-            };
+            return { ...DEFAULT_CONFIG };
         }
     };
 
@@ -487,8 +485,8 @@
         const [connectionStatus, setConnectionStatus] = useState('unknown');
         const [isTesting, setIsTesting] = useState(false);
         const [progress, setProgress] = useState({ current: 0, total: 0, success: 0, failed: 0 });
-        const [sortBy, setSortBy] = useState('name');
-        const [sortDirection, setSortDirection] = useState('asc');
+        const [sortBy, setSortBy] = useState(config.sortBy);
+        const [sortDirection, setSortDirection] = useState(config.sortDirection);
 
         const showToast = (message, type = 'info') => {
             setToast({ visible: true, message, type });
@@ -582,6 +580,16 @@
         useEffect(() => {
             setFiles(prev => sortFiles(prev));
         }, [sortBy, sortDirection]);
+
+        useEffect(() => {
+            if (config.sortBy === sortBy && config.sortDirection === sortDirection) {
+                return;
+            }
+
+            const nextConfig = { ...config, sortBy, sortDirection };
+            setConfig(nextConfig);
+            setConfigState(nextConfig);
+        }, [config, sortBy, sortDirection]);
 
         const handleFileSelect = (fileId, selected) => {
             const newSelected = new Set(selectedFiles);
