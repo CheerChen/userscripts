@@ -11,7 +11,7 @@
 // @name:fr      PikPak Aria2 Assistant
 // @name:de      PikPak Aria2 Helfer
 // @namespace    https://github.com/CheerChen
-// @version      0.0.4
+// @version      0.1.0
 // @description  Push PikPak files and folders to Aria2 for downloading.
 // @description:en Push PikPak files and folders to Aria2 for downloading.
 // @description:ja PikPakのファイルとフォルダをAria2にプッシュしてダウンロードします。
@@ -27,8 +27,9 @@
 // @match        *://*mypikpak.com/*
 // @match        *://*mypikpak.net/*
 // @match        *://*pikpak.me/*
-// @require      https://unpkg.com/react@18/umd/react.production.min.js
-// @require      https://unpkg.com/react-dom@18/umd/react-dom.production.min.js
+// @require      https://unpkg.com/preact@10/dist/preact.umd.js
+// @require      https://unpkg.com/preact@10/hooks/dist/hooks.umd.js
+// @require      https://unpkg.com/htm@3/dist/htm.umd.js
 // @grant        GM_xmlhttpRequest
 // @connect      *
 // @icon         https://www.google.com/s2/favicons?domain=mypikpak.com
@@ -40,909 +41,440 @@
 (function () {
     'use strict';
 
-    const { React, ReactDOM } = window;
-    const { useState, useEffect, useRef, useCallback } = React;
-    const { createRoot } = ReactDOM;
+    const { h, render } = preact;
+    const { useState, useEffect } = preactHooks;
+    const html = htm.bind(h);
 
-    console.log("PikPak Aria2 助手已加载");
+    // ─── i18n ───
 
-    // ==================== API Functions ====================
+    const i18n = {
+        zh: {
+            aria2Download: 'Aria2 下载',
+            pushToAria2: '推送到 Aria2',
+            configAria2: '配置 Aria2',
+            selectAll: '全选',
+            name: '名称', size: '大小', createdTime: '创建时间', modifiedTime: '修改时间',
+            asc: '升序', desc: '降序',
+            selectFiles: '请先选择要推送的文件',
+            configFirst: '请先配置 Aria2',
+            pushing: '推送中...',
+            pushBtn: n => `推送到 Aria2 (${n})`,
+            progress: (c, t, s, f) => `推送进度: ${c}/${t} (成功: ${s}, 失败: ${f})`,
+            pushDone: (s, f) => f === 0 ? `推送完成！成功 ${s} 个文件` : `推送完成：成功 ${s}，失败 ${f}`,
+            scanning: name => `正在扫描文件夹: ${name}`,
+            preparing: t => `准备推送 ${t} 个文件`,
+            connected: 'Aria2 连接正常', disconnected: 'Aria2 连接失败',
+            testing: '正在测试连接...', unknown: '连接状态未知',
+            testBtn: '测试连接', testingBtn: '测试中...',
+            rpcUrl: 'RPC 地址', rpcUrlHint: 'Aria2 RPC 服务地址，通常是 http://127.0.0.1:6800/jsonrpc',
+            rpcToken: 'RPC 密钥', rpcTokenHint: '如果 Aria2 设置了 rpc-secret，请在此填写',
+            rpcTokenPlaceholder: '没有请留空',
+            downloadPath: '下载路径', downloadPathHint: '文件保存路径，例如 /downloads/ 或 D:\\Downloads\\',
+            customParams: '其他参数', customParamsHint: '额外参数，以分号分隔，如 user-agent=Mozilla;split=10',
+            save: '保存', cancel: '取消',
+        },
+        en: {
+            aria2Download: 'Aria2 Download',
+            pushToAria2: 'Push to Aria2',
+            configAria2: 'Configure Aria2',
+            selectAll: 'Select All',
+            name: 'Name', size: 'Size', createdTime: 'Created', modifiedTime: 'Modified',
+            asc: 'Asc', desc: 'Desc',
+            selectFiles: 'Please select files first',
+            configFirst: 'Please configure Aria2 first',
+            pushing: 'Pushing...',
+            pushBtn: n => `Push to Aria2 (${n})`,
+            progress: (c, t, s, f) => `Progress: ${c}/${t} (Success: ${s}, Failed: ${f})`,
+            pushDone: (s, f) => f === 0 ? `Done! ${s} file(s) pushed` : `Done: ${s} success, ${f} failed`,
+            scanning: name => `Scanning folder: ${name}`,
+            preparing: t => `Preparing ${t} file(s)`,
+            connected: 'Aria2 connected', disconnected: 'Aria2 connection failed',
+            testing: 'Testing connection...', unknown: 'Connection unknown',
+            testBtn: 'Test', testingBtn: 'Testing...',
+            rpcUrl: 'RPC URL', rpcUrlHint: 'Aria2 RPC address, usually http://127.0.0.1:6800/jsonrpc',
+            rpcToken: 'RPC Token', rpcTokenHint: 'Fill in if Aria2 has rpc-secret configured',
+            rpcTokenPlaceholder: 'Leave empty if none',
+            downloadPath: 'Download Path', downloadPathHint: 'e.g. /downloads/ or D:\\Downloads\\',
+            customParams: 'Extra Params', customParamsHint: 'Semicolon-separated, e.g. user-agent=Mozilla;split=10',
+            save: 'Save', cancel: 'Cancel',
+        },
+    };
 
-    // 获取认证头部信息
+    const lang = (navigator.language || '').startsWith('zh') ? 'zh' : 'en';
+    const t = key => i18n[lang][key];
+
+    // ─── PikPak API ───
+
     function getHeader() {
-        let token = "";
-        let captcha = "";
-        for (let i = 0; i < window.localStorage.length; i++) {
-            let key = window.localStorage.key(i);
-            if (key === null) continue;
-            if (key && key.startsWith("credentials")) {
-                let tokenData = JSON.parse(window.localStorage.getItem(key));
-                token = tokenData.token_type + " " + tokenData.access_token;
-                continue;
+        let token = '', captcha = '';
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (!key) continue;
+            if (key.startsWith('credentials')) {
+                const d = JSON.parse(localStorage.getItem(key));
+                token = d.token_type + ' ' + d.access_token;
             }
-            if (key && key.startsWith("captcha")) {
-                let tokenData = JSON.parse(window.localStorage.getItem(key));
-                captcha = tokenData.captcha_token;
+            if (key.startsWith('captcha')) {
+                const d = JSON.parse(localStorage.getItem(key));
+                captcha = d.captcha_token;
             }
         }
-        // deviceid 格式为 "wdi10.xxxxx..."，需要提取点号后的前32位作为 x-device-id
-        let deviceId = window.localStorage.getItem("deviceid") || "";
-        if (deviceId.includes(".")) {
-            deviceId = deviceId.split(".")[1]?.substring(0, 32) || deviceId;
-        }
-        return {
-            Authorization: token,
-            "x-device-id": deviceId,
-            "x-captcha-token": captcha
-        };
+        let deviceId = localStorage.getItem('deviceid') || '';
+        if (deviceId.includes('.')) deviceId = deviceId.split('.')[1]?.substring(0, 32) || deviceId;
+        return { Authorization: token, 'x-device-id': deviceId, 'x-captcha-token': captcha };
     }
 
-    // 获取文件列表
-    function getList(parent_id) {
-        const url = `https://api-drive.mypikpak.com/drive/v1/files?thumbnail_size=SIZE_MEDIUM&limit=500&parent_id=${parent_id}&with_audit=true&filters=%7B%22phase%22%3A%7B%22eq%22%3A%22PHASE_TYPE_COMPLETE%22%7D%2C%22trashed%22%3A%7B%22eq%22%3Afalse%7D%7D`;
-        return fetch(url, {
-            method: "GET",
-            mode: "cors",
-            cache: "no-cache",
-            credentials: "same-origin",
-            headers: {
-                "Content-Type": "application/json",
-                ...getHeader()
-            },
-            redirect: "follow",
-            referrerPolicy: "no-referrer"
-        }).then(response => response.json());
+    function getList(parentId) {
+        return fetch(`https://api-drive.mypikpak.com/drive/v1/files?thumbnail_size=SIZE_MEDIUM&limit=500&parent_id=${parentId}&with_audit=true&filters=${encodeURIComponent('{"phase":{"eq":"PHASE_TYPE_COMPLETE"},"trashed":{"eq":false}}')}`, {
+            headers: { 'Content-Type': 'application/json', ...getHeader() },
+        }).then(r => r.json());
     }
 
-    // 获取文件下载链接
     function getDownloadUrl(fileId) {
-        const url = `https://api-drive.mypikpak.com/drive/v1/files/${fileId}?`;
-        return fetch(url, {
-            method: "GET",
-            mode: "cors",
-            cache: "no-cache",
-            credentials: "same-origin",
-            headers: {
-                "Content-Type": "application/json",
-                ...getHeader()
-            },
-            redirect: "follow",
-            referrerPolicy: "no-referrer"
-        }).then(response => response.json());
+        return fetch(`https://api-drive.mypikpak.com/drive/v1/files/${fileId}?`, {
+            headers: { 'Content-Type': 'application/json', ...getHeader() },
+        }).then(r => r.json());
     }
 
-    // 推送到 Aria2
-    function pushToAria2(rpcUrl, data) {
+    // ─── Aria2 RPC ───
+
+    function rpcCall(rpcUrl, data) {
         return new Promise((resolve, reject) => {
-            if (typeof GM_xmlhttpRequest !== 'undefined') {
-                GM_xmlhttpRequest({
-                    method: "POST",
-                    url: rpcUrl,
-                    headers: { "Content-Type": "application/json" },
-                    data: JSON.stringify(data),
-                    responseType: "json",
-                    onload: (res) => {
-                        if (res.response) {
-                            resolve(res.response);
-                        } else if (res.responseText) {
-                            try {
-                                resolve(JSON.parse(res.responseText));
-                            } catch {
-                                reject(new Error("Invalid response"));
-                            }
-                        } else {
-                            reject(new Error("Empty response"));
-                        }
-                    },
-                    onerror: (err) => reject(new Error(err.statusText || "Network error"))
-                });
-            } else {
-                // Fallback to fetch for same-origin requests
-                fetch(rpcUrl, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(data)
-                })
-                    .then(res => res.json())
-                    .then(resolve)
-                    .catch(reject);
-            }
+            GM_xmlhttpRequest({
+                method: 'POST', url: rpcUrl,
+                headers: { 'Content-Type': 'application/json' },
+                data: JSON.stringify(data),
+                onload: res => {
+                    try { resolve(JSON.parse(res.responseText)); }
+                    catch { reject(new Error('Invalid response')); }
+                },
+                onerror: e => reject(new Error(e.statusText || 'Network error')),
+            });
         });
     }
 
-    // ==================== Config Management ====================
+    // ─── Config ───
 
     const CONFIG_KEY = 'pikpak-aria2-helper-config';
-    const DEFAULT_CONFIG = {
-        rpcUrl: 'http://127.0.0.1:6800/jsonrpc',
-        rpcToken: '',
-        downloadPath: '',
-        customParams: '',
-        sortBy: 'name',
-        sortDirection: 'asc'
+    const defaultConfig = { rpcUrl: 'http://127.0.0.1:6800/jsonrpc', rpcToken: '', downloadPath: '', customParams: '', sortBy: 'name', sortDir: 'asc' };
+    const getConfig = () => { try { return { ...defaultConfig, ...JSON.parse(localStorage.getItem(CONFIG_KEY)) }; } catch { return { ...defaultConfig }; } };
+    const saveConfig = c => localStorage.setItem(CONFIG_KEY, JSON.stringify(c));
+
+    // ─── Helpers ───
+
+    const delay = ms => new Promise(r => setTimeout(r, ms));
+    const colors = { secondary: '#606266', success: '#67c23a', danger: '#f56c6c', blue: '#409eff' };
+
+    const formatBytes = b => {
+        if (!b || b <= 0) return '';
+        const k = 1024, s = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(b) / Math.log(k));
+        return (b / Math.pow(k, i)).toFixed(1) + ' ' + s[i];
     };
 
-    const getConfig = () => {
-        try {
-            return { ...DEFAULT_CONFIG, ...(JSON.parse(localStorage.getItem(CONFIG_KEY)) || {}) };
-        } catch {
-            return { ...DEFAULT_CONFIG };
-        }
-    };
+    const sortFiles = (list, by, dir) => [...list].sort((a, b) => {
+        const af = a.kind === 'drive#folder', bf = b.kind === 'drive#folder';
+        if (af !== bf) return af ? -1 : 1;
+        let av = a[by], bv = b[by];
+        if (by === 'size') { av = parseInt(av || '0'); bv = parseInt(bv || '0'); }
+        else if (by.includes('time')) { av = new Date(av).getTime(); bv = new Date(bv).getTime(); }
+        else { av = (av || '').toLowerCase(); bv = (bv || '').toLowerCase(); }
+        const c = av > bv ? 1 : av < bv ? -1 : 0;
+        return dir === 'asc' ? c : -c;
+    });
 
-    const setConfig = (config) => {
-        localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
-    };
+    function testAria2(rpcUrl, rpcToken) {
+        const payload = { jsonrpc: '2.0', method: 'aria2.getVersion', id: 1, params: rpcToken ? [`token:${rpcToken}`] : [] };
+        return rpcCall(rpcUrl, payload).then(r => !!(r && r.result));
+    }
 
-    // ==================== Styles ====================
+    // ─── Components ───
 
-    const STYLES = {
-        overlay: {
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            zIndex: 10000
-        },
-        modal: {
-            backgroundColor: '#fff', borderRadius: '8px', padding: '24px',
-            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.2)',
-            width: '90%', maxWidth: '800px', maxHeight: '80vh',
-            display: 'flex', flexDirection: 'column'
-        },
-        header: {
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            marginBottom: '20px', borderBottom: '1px solid #ebeef5', paddingBottom: '16px'
-        },
-        button: {
-            padding: '8px 16px', border: 'none', borderRadius: '4px', cursor: 'pointer'
-        },
-        primaryBtn: { backgroundColor: '#409eff', color: '#fff' },
-        secondaryBtn: { backgroundColor: '#fff', color: '#606266', border: '1px solid #dcdfe6' },
-        successBtn: { backgroundColor: '#67c23a', color: '#fff' },
-        disabledBtn: { backgroundColor: '#c0c4cc', cursor: 'not-allowed', opacity: 0.6 },
-        text: { primary: '#303133', secondary: '#606266', success: '#67c23a', danger: '#f56c6c', warning: '#e6a23c' },
-        input: {
-            width: '100%', padding: '8px 12px', border: '1px solid #dcdfe6',
-            borderRadius: '4px', fontSize: '14px', boxSizing: 'border-box'
-        }
-    };
-
-    // ==================== Utility Functions ====================
-
-    const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-    const formatBytes = (bytes, decimals = 2) => {
-        if (!bytes || bytes === 0) return '0 Bytes';
-        const k = 1024;
-        const dm = decimals < 0 ? 0 : decimals;
-        const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-    };
-
-    // ==================== Components ====================
-
-    // Toast Component
-    const Toast = ({ message, type, visible }) => {
-        if (!visible || !message) return null;
-
-        const bgColors = {
-            success: 'rgba(103, 194, 58, 0.9)',
-            error: 'rgba(245, 108, 108, 0.9)',
-            warning: 'rgba(230, 162, 60, 0.9)',
-            info: 'rgba(64, 158, 255, 0.9)'
-        };
-
+    function Toast({ message, type }) {
+        if (!message) return null;
+        const bg = { success: 'rgba(103,194,58,.9)', error: 'rgba(245,108,108,.9)', warning: 'rgba(230,162,60,.9)', info: 'rgba(64,158,255,.9)' };
         const icons = { success: '✓', error: '✕', warning: '⚠', info: 'ℹ' };
+        return html`<div style="position:fixed;top:30px;left:50%;transform:translateX(-50%);padding:15px 20px;background:${bg[type] || bg.info};color:#fff;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.15);font-size:14px;z-index:10001;display:flex;align-items:center;gap:10px">
+            <span style="font-size:18px;font-weight:bold">${icons[type] || icons.info}</span>
+            <span>${message}</span>
+        </div>`;
+    }
 
-        return React.createElement('div', {
-            style: {
-                position: 'fixed', top: '30px', left: '50%', transform: 'translateX(-50%)',
-                padding: '15px 20px', backgroundColor: bgColors[type] || bgColors.info,
-                color: '#fff', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                fontSize: '14px', zIndex: 10001, display: 'flex', alignItems: 'center', gap: '10px'
-            }
-        }, [
-            React.createElement('span', { key: 'icon', style: { fontSize: '18px', fontWeight: 'bold' } }, icons[type] || icons.info),
-            React.createElement('span', { key: 'msg' }, message)
-        ]);
-    };
+    function ConnectionStatus({ status, onTest, testing }) {
+        const cfg = { connected: { color: colors.success, text: t('connected') }, disconnected: { color: colors.danger, text: t('disconnected') },
+            testing: { color: '#e6a23c', text: t('testing') }, unknown: { color: '#909399', text: t('unknown') } };
+        const s = cfg[status] || cfg.unknown;
+        return html`<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#f8f9fa;border-radius:8px;margin-bottom:16px;border:1px solid #e9ecef">
+            <div style="display:flex;align-items:center;gap:8px">
+                <div style="width:10px;height:10px;border-radius:50%;background:${s.color};box-shadow:0 0 0 2px ${s.color}33" />
+                <span style="font-size:14px;color:#666">${s.text}</span>
+            </div>
+            <button onClick=${onTest} disabled=${testing}
+                style="padding:6px 12px;font-size:12px;border:1px solid #dcdfe6;border-radius:4px;background:#fff;color:#666;cursor:${testing ? 'not-allowed' : 'pointer'};opacity:${testing ? 0.6 : 1}">
+                ${testing ? t('testingBtn') : t('testBtn')}</button>
+        </div>`;
+    }
 
-    // Connection Status Component
-    const ConnectionStatus = ({ status, onTest, isTesting }) => {
-        const statusConfig = {
-            connected: { color: '#67c23a', text: 'Aria2 连接正常' },
-            disconnected: { color: '#f56c6c', text: 'Aria2 连接失败' },
-            testing: { color: '#e6a23c', text: '正在测试连接...' },
-            unknown: { color: '#909399', text: '连接状态未知' }
+    function FileItem({ file, selected, onSelect, status, sortBy }) {
+        const icons = { success: '✅', error: '❌', downloading: '⏳' };
+        const info = () => {
+            if (sortBy === 'size') return file.size && parseInt(file.size) > 0 ? formatBytes(parseInt(file.size)) : '';
+            if (sortBy === 'created_time' || sortBy === 'modified_time') return file[sortBy] ? new Date(file[sortBy]).toLocaleString() : '';
+            return file.size && parseInt(file.size) > 0 ? formatBytes(parseInt(file.size)) : '';
+        };
+        return html`<div style="display:flex;align-items:center;padding:10px 0;border-bottom:1px solid #f0f0f0">
+            <input type="checkbox" checked=${selected} onChange=${e => onSelect(file.id, e.target.checked)} style="margin-right:12px" />
+            <span style="margin-right:10px;font-size:18px">${file.kind === 'drive#folder' ? '📁' : '📄'}</span>
+            <div style="flex:1;min-width:0;font-weight:500;word-break:break-word">${file.name}</div>
+            <span style="margin-left:16px;font-size:12px;color:${colors.secondary};white-space:nowrap">${info()}</span>
+            ${status && html`<span style="margin-left:12px;font-size:16px">${icons[status] || ''}</span>`}
+        </div>`;
+    }
+
+    function ConfigPanel({ config, onSave, onClose }) {
+        const [local, setLocal] = useState(config);
+        const [connStatus, setConnStatus] = useState('unknown');
+        const [testing, setTesting] = useState(false);
+
+        const doTest = async () => {
+            if (!local.rpcUrl) return;
+            setTesting(true); setConnStatus('testing');
+            try { setConnStatus(await testAria2(local.rpcUrl, local.rpcToken) ? 'connected' : 'disconnected'); }
+            catch { setConnStatus('disconnected'); }
+            finally { setTesting(false); }
         };
 
-        const config = statusConfig[status] || statusConfig.unknown;
-
-        return React.createElement('div', {
-            style: {
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                padding: '12px 16px', backgroundColor: '#f8f9fa', borderRadius: '8px',
-                marginBottom: '16px', border: '1px solid #e9ecef'
-            }
-        }, [
-            React.createElement('div', { key: 'indicator', style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [
-                React.createElement('div', {
-                    key: 'dot',
-                    style: {
-                        width: '10px', height: '10px', borderRadius: '50%',
-                        backgroundColor: config.color,
-                        boxShadow: `0 0 0 2px ${config.color}33`
-                    }
-                }),
-                React.createElement('span', { key: 'text', style: { fontSize: '14px', color: '#666' } }, config.text)
-            ]),
-            React.createElement('button', {
-                key: 'btn',
-                onClick: onTest,
-                disabled: isTesting,
-                style: {
-                    padding: '6px 12px', fontSize: '12px', border: '1px solid #dcdfe6',
-                    borderRadius: '4px', backgroundColor: '#fff', color: '#666',
-                    cursor: isTesting ? 'not-allowed' : 'pointer', opacity: isTesting ? 0.6 : 1
-                }
-            }, isTesting ? '测试中...' : '测试连接')
-        ]);
-    };
-
-    // File Item Component
-    const FileItem = ({ file, selected, onSelect, status, sortBy }) => {
-        const formatFileInfo = (item) => {
-            switch (sortBy) {
-                case 'size':
-                    return item.size ? formatBytes(parseInt(item.size)) : 'N/A';
-                case 'created_time':
-                    return item.created_time ? new Date(item.created_time).toLocaleString() : 'N/A';
-                case 'modified_time':
-                    return item.modified_time ? new Date(item.modified_time).toLocaleString() : 'N/A';
-                default:
-                    return item.size ? formatBytes(parseInt(item.size)) : '';
-            }
-        };
-
-        const statusIcons = {
-            pending: '',
-            downloading: '⏳',
-            success: '✅',
-            error: '❌'
-        };
-
-        return React.createElement('div', {
-            style: {
-                display: 'flex', alignItems: 'center', padding: '10px 0',
-                borderBottom: '1px solid #f0f0f0'
-            }
-        }, [
-            React.createElement('input', {
-                key: 'checkbox', type: 'checkbox', checked: selected,
-                onChange: (e) => onSelect(file.id, e.target.checked),
-                style: { marginRight: '12px' }
-            }),
-            React.createElement('span', { key: 'icon', style: { marginRight: '10px', fontSize: '18px' } },
-                file.kind === 'drive#folder' ? '📁' : '📄'),
-            React.createElement('div', { key: 'info', style: { flex: 1, minWidth: 0 } }, [
-                React.createElement('div', {
-                    key: 'name',
-                    style: { fontWeight: '500', color: STYLES.text.primary, wordBreak: 'break-word' }
-                }, file.name)
-            ]),
-            React.createElement('span', {
-                key: 'size',
-                style: { marginLeft: '16px', fontSize: '12px', color: STYLES.text.secondary, whiteSpace: 'nowrap' }
-            }, formatFileInfo(file)),
-            status && React.createElement('span', {
-                key: 'status',
-                style: { marginLeft: '12px', fontSize: '16px' }
-            }, statusIcons[status] || '')
-        ]);
-    };
-
-    // Config Panel Component
-    const ConfigPanel = ({ config, onConfigChange, onClose }) => {
-        const [localConfig, setLocalConfig] = useState(config);
-        const [connectionStatus, setConnectionStatus] = useState('unknown');
-        const [isTesting, setIsTesting] = useState(false);
-
-        const testConnection = async () => {
-            if (!localConfig.rpcUrl) return;
-
-            setIsTesting(true);
-            setConnectionStatus('testing');
-
-            try {
-                const payload = {
-                    jsonrpc: "2.0",
-                    method: "aria2.getVersion",
-                    id: 1,
-                    params: localConfig.rpcToken ? [`token:${localConfig.rpcToken}`] : []
-                };
-
-                const response = await pushToAria2(localConfig.rpcUrl, payload);
-                setConnectionStatus(response && response.result ? 'connected' : 'disconnected');
-            } catch (error) {
-                console.error('Connection test failed:', error);
-                setConnectionStatus('disconnected');
-            } finally {
-                setIsTesting(false);
-            }
-        };
+        useEffect(() => { if (local.rpcUrl) doTest(); }, []);
 
         const handleSave = () => {
-            // Ensure path ends with /
-            if (localConfig.downloadPath && !localConfig.downloadPath.endsWith('/') && !localConfig.downloadPath.endsWith('\\')) {
-                localConfig.downloadPath += '/';
-            }
-            setConfig(localConfig);
-            onConfigChange(localConfig);
-            onClose();
+            const c = { ...local };
+            if (c.downloadPath && !/[/\\]$/.test(c.downloadPath)) c.downloadPath += '/';
+            saveConfig(c); onSave(c); onClose();
         };
 
-        useEffect(() => {
-            if (localConfig.rpcUrl) {
-                testConnection();
-            }
-        }, []);
+        const field = (key, label, hint, placeholder) => html`
+            <div style="margin-bottom:16px">
+                <label style="display:block;margin-bottom:6px;font-weight:500">${label}</label>
+                <input type="text" value=${local[key]} placeholder=${placeholder || ''}
+                    onInput=${e => setLocal({ ...local, [key]: e.target.value })}
+                    style="width:100%;padding:8px 12px;border:1px solid #dcdfe6;border-radius:4px;font-size:14px;box-sizing:border-box" />
+                <div style="font-size:12px;color:${colors.secondary};margin-top:4px">${hint}</div>
+            </div>`;
 
-        return React.createElement('div', { style: STYLES.overlay },
-            React.createElement('div', { style: { ...STYLES.modal, maxWidth: '500px' } }, [
-                React.createElement('div', { key: 'header', style: STYLES.header }, [
-                    React.createElement('h2', { key: 'title', style: { margin: 0, fontSize: '18px', color: STYLES.text.primary } }, '配置 Aria2'),
-                    React.createElement('button', {
-                        key: 'close', onClick: onClose,
-                        style: { background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: STYLES.text.secondary }
-                    }, '×')
-                ]),
+        return html`<div style="position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:10000">
+            <div style="background:#fff;border-radius:8px;padding:24px;box-shadow:0 10px 25px rgba(0,0,0,.2);width:90%;max-width:500px;max-height:80vh;display:flex;flex-direction:column">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;border-bottom:1px solid #ebeef5;padding-bottom:16px">
+                    <h2 style="margin:0;font-size:18px">${t('configAria2')}</h2>
+                    <button onClick=${onClose} style="background:none;border:none;font-size:24px;cursor:pointer;color:${colors.secondary}">×</button>
+                </div>
+                <${ConnectionStatus} status=${connStatus} onTest=${doTest} testing=${testing} />
+                <div style="flex:1;overflow-y:auto">
+                    ${field('rpcUrl', t('rpcUrl'), t('rpcUrlHint'), 'http://127.0.0.1:6800/jsonrpc')}
+                    ${field('rpcToken', t('rpcToken'), t('rpcTokenHint'), t('rpcTokenPlaceholder'))}
+                    ${field('downloadPath', t('downloadPath'), t('downloadPathHint'), '/downloads/')}
+                    ${field('customParams', t('customParams'), t('customParamsHint'), 'user-agent=xxx;split=10')}
+                </div>
+                <div style="display:flex;justify-content:flex-end;gap:12px;margin-top:20px;padding-top:16px;border-top:1px solid #ebeef5">
+                    <button onClick=${onClose} style="padding:8px 16px;border:1px solid #dcdfe6;border-radius:4px;cursor:pointer;background:#fff">${t('cancel')}</button>
+                    <button onClick=${handleSave} style="padding:8px 16px;border:none;border-radius:4px;cursor:pointer;background:${colors.blue};color:#fff">${t('save')}</button>
+                </div>
+            </div>
+        </div>`;
+    }
 
-                React.createElement(ConnectionStatus, {
-                    key: 'status',
-                    status: connectionStatus,
-                    onTest: testConnection,
-                    isTesting: isTesting
-                }),
-
-                React.createElement('div', { key: 'form', style: { flex: 1, overflowY: 'auto' } }, [
-                    // RPC URL
-                    React.createElement('div', { key: 'rpc', style: { marginBottom: '16px' } }, [
-                        React.createElement('label', { key: 'label', style: { display: 'block', marginBottom: '6px', fontWeight: '500', color: STYLES.text.primary } }, 'RPC 地址'),
-                        React.createElement('input', {
-                            key: 'input', type: 'text', value: localConfig.rpcUrl,
-                            placeholder: 'http://127.0.0.1:6800/jsonrpc',
-                            onChange: (e) => setLocalConfig({ ...localConfig, rpcUrl: e.target.value }),
-                            style: STYLES.input
-                        }),
-                        React.createElement('div', { key: 'hint', style: { fontSize: '12px', color: STYLES.text.secondary, marginTop: '4px' } },
-                            'Aria2 RPC 服务地址，通常是 http://127.0.0.1:6800/jsonrpc')
-                    ]),
-
-                    // RPC Token
-                    React.createElement('div', { key: 'token', style: { marginBottom: '16px' } }, [
-                        React.createElement('label', { key: 'label', style: { display: 'block', marginBottom: '6px', fontWeight: '500', color: STYLES.text.primary } }, 'RPC 密钥'),
-                        React.createElement('input', {
-                            key: 'input', type: 'text', value: localConfig.rpcToken,
-                            placeholder: '没有请留空',
-                            onChange: (e) => setLocalConfig({ ...localConfig, rpcToken: e.target.value }),
-                            style: STYLES.input
-                        }),
-                        React.createElement('div', { key: 'hint', style: { fontSize: '12px', color: STYLES.text.secondary, marginTop: '4px' } },
-                            '如果 Aria2 设置了 rpc-secret，请在此填写')
-                    ]),
-
-                    // Download Path
-                    React.createElement('div', { key: 'path', style: { marginBottom: '16px' } }, [
-                        React.createElement('label', { key: 'label', style: { display: 'block', marginBottom: '6px', fontWeight: '500', color: STYLES.text.primary } }, '下载路径'),
-                        React.createElement('input', {
-                            key: 'input', type: 'text', value: localConfig.downloadPath,
-                            placeholder: '/downloads/',
-                            onChange: (e) => setLocalConfig({ ...localConfig, downloadPath: e.target.value }),
-                            style: STYLES.input
-                        }),
-                        React.createElement('div', { key: 'hint', style: { fontSize: '12px', color: STYLES.text.secondary, marginTop: '4px' } },
-                            '文件保存路径，例如 /downloads/ 或 D:\\Downloads\\')
-                    ]),
-
-                    // Custom Params
-                    React.createElement('div', { key: 'params', style: { marginBottom: '16px' } }, [
-                        React.createElement('label', { key: 'label', style: { display: 'block', marginBottom: '6px', fontWeight: '500', color: STYLES.text.primary } }, '其他参数'),
-                        React.createElement('input', {
-                            key: 'input', type: 'text', value: localConfig.customParams,
-                            placeholder: 'user-agent=xxx;split=10',
-                            onChange: (e) => setLocalConfig({ ...localConfig, customParams: e.target.value }),
-                            style: STYLES.input
-                        }),
-                        React.createElement('div', { key: 'hint', style: { fontSize: '12px', color: STYLES.text.secondary, marginTop: '4px' } },
-                            '额外参数，以分号分隔，如 user-agent=Mozilla;split=10')
-                    ])
-                ]),
-
-                React.createElement('div', { key: 'footer', style: { display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #ebeef5' } }, [
-                    React.createElement('button', {
-                        key: 'cancel', onClick: onClose,
-                        style: { ...STYLES.button, ...STYLES.secondaryBtn }
-                    }, '取消'),
-                    React.createElement('button', {
-                        key: 'save', onClick: handleSave,
-                        style: { ...STYLES.button, ...STYLES.primaryBtn }
-                    }, '保存')
-                ])
-            ])
-        );
-    };
-
-    // Main Modal Component
-    const Aria2Modal = ({ isOpen, onClose }) => {
+    function Aria2Modal({ onClose }) {
         const [files, setFiles] = useState([]);
-        const [selectedFiles, setSelectedFiles] = useState(new Set());
-        const [fileStatuses, setFileStatuses] = useState({});
-        const [isPushing, setIsPushing] = useState(false);
+        const [selected, setSelected] = useState(new Set());
+        const [statuses, setStatuses] = useState({});
+        const [pushing, setPushing] = useState(false);
         const [showConfig, setShowConfig] = useState(false);
         const [config, setConfigState] = useState(getConfig());
-        const [toast, setToast] = useState({ visible: false, message: '', type: 'info' });
-        const [connectionStatus, setConnectionStatus] = useState('unknown');
-        const [isTesting, setIsTesting] = useState(false);
-        const [progress, setProgress] = useState({ current: 0, total: 0, success: 0, failed: 0 });
-        const [sortBy, setSortBy] = useState(config.sortBy);
-        const [sortDirection, setSortDirection] = useState(config.sortDirection);
+        const [toast, setToast] = useState(null);
+        const [connStatus, setConnStatus] = useState('unknown');
+        const [testing, setTesting] = useState(false);
+        const [progress, setProgress] = useState({ cur: 0, total: 0, success: 0, failed: 0 });
+        const [sortBy, setSortBy_] = useState(config.sortBy || 'name');
+        const [sortDir, setSortDir_] = useState(config.sortDir || 'asc');
 
-        const showToast = (message, type = 'info') => {
-            setToast({ visible: true, message, type });
-            setTimeout(() => setToast({ visible: false, message: '', type: 'info' }), 3000);
+        const setSortBy = v => { setSortBy_(v); const c = { ...config, sortBy: v }; saveConfig(c); setConfigState(c); };
+        const setSortDir = v => { setSortDir_(v); const c = { ...config, sortDir: v }; saveConfig(c); setConfigState(c); };
+
+        const showToastMsg = (message, type = 'info') => {
+            setToast({ message, type });
+            setTimeout(() => setToast(null), 3000);
         };
 
-        const testConnection = async () => {
-            if (!config.rpcUrl) {
-                showToast('请先配置 Aria2 RPC 地址', 'warning');
-                return;
-            }
-
-            setIsTesting(true);
-            setConnectionStatus('testing');
-
-            try {
-                const payload = {
-                    jsonrpc: "2.0",
-                    method: "aria2.getVersion",
-                    id: 1,
-                    params: config.rpcToken ? [`token:${config.rpcToken}`] : []
-                };
-
-                const response = await pushToAria2(config.rpcUrl, payload);
-                if (response && response.result) {
-                    setConnectionStatus('connected');
-                    showToast('Aria2 连接成功', 'success');
-                } else {
-                    setConnectionStatus('disconnected');
-                    showToast('Aria2 连接失败', 'error');
-                }
-            } catch (error) {
-                setConnectionStatus('disconnected');
-                showToast(`连接失败: ${error.message}`, 'error');
-            } finally {
-                setIsTesting(false);
-            }
+        const doTest = async () => {
+            if (!config.rpcUrl) return;
+            setTesting(true); setConnStatus('testing');
+            try { setConnStatus(await testAria2(config.rpcUrl, config.rpcToken) ? 'connected' : 'disconnected'); }
+            catch { setConnStatus('disconnected'); }
+            finally { setTesting(false); }
         };
-
-        const sortFiles = (filesToSort) => {
-            return [...filesToSort].sort((a, b) => {
-                const aIsFolder = a.kind === 'drive#folder';
-                const bIsFolder = b.kind === 'drive#folder';
-
-                if (aIsFolder && !bIsFolder) return -1;
-                if (!aIsFolder && bIsFolder) return 1;
-
-                let aValue = a[sortBy];
-                let bValue = b[sortBy];
-
-                if (sortBy === 'size') {
-                    aValue = parseInt(aValue || '0');
-                    bValue = parseInt(bValue || '0');
-                } else if (sortBy === 'created_time' || sortBy === 'modified_time') {
-                    aValue = new Date(aValue).getTime();
-                    bValue = new Date(bValue).getTime();
-                } else {
-                    aValue = aValue?.toLowerCase() || '';
-                    bValue = bValue?.toLowerCase() || '';
-                }
-
-                let comparison = aValue > bValue ? 1 : aValue < bValue ? -1 : 0;
-                return sortDirection === 'asc' ? comparison : -comparison;
-            });
-        };
-
-        // Load file list
-        useEffect(() => {
-            if (isOpen) {
-                let parent_id = window.location.pathname.split("/").pop();
-                if (parent_id === "all") parent_id = "";
-
-                showToast('正在加载文件列表...', 'info');
-
-                getList(parent_id).then(res => {
-                    if (res.files) {
-                        setFiles(sortFiles(res.files));
-                        showToast('文件列表加载完成', 'success');
-                    }
-                }).catch(error => {
-                    console.error('获取文件列表失败:', error);
-                    showToast('获取文件列表失败', 'error');
-                });
-
-                // Test connection
-                setTimeout(testConnection, 500);
-            }
-        }, [isOpen]);
-
-        // Re-sort when sort options change
-        useEffect(() => {
-            setFiles(prev => sortFiles(prev));
-        }, [sortBy, sortDirection]);
 
         useEffect(() => {
-            if (config.sortBy === sortBy && config.sortDirection === sortDirection) {
-                return;
+            let pid = location.pathname.split('/').pop();
+            if (pid === 'all') pid = '';
+            getList(pid).then(r => r.files && setFiles(sortFiles(r.files, sortBy, sortDir))).catch(console.error);
+            setTimeout(doTest, 500);
+        }, []);
+
+        useEffect(() => { setFiles(f => sortFiles(f, sortBy, sortDir)); }, [sortBy, sortDir]);
+
+        const toggleSelect = (id, on) => setSelected(s => { const n = new Set(s); on ? n.add(id) : n.delete(id); return n; });
+        const selectAll = on => setSelected(on ? new Set(files.map(f => f.id)) : new Set());
+
+        const getAllFiles = async () => {
+            const allFiles = [], folders = [];
+            for (const id of selected) {
+                const f = files.find(x => x.id === id);
+                if (!f) continue;
+                f.kind === 'drive#folder' ? folders.push({ id: f.id, name: f.name, path: f.name }) : allFiles.push({ ...f, path: '' });
             }
-
-            const nextConfig = { ...config, sortBy, sortDirection };
-            setConfig(nextConfig);
-            setConfigState(nextConfig);
-        }, [config, sortBy, sortDirection]);
-
-        const handleFileSelect = (fileId, selected) => {
-            const newSelected = new Set(selectedFiles);
-            if (selected) {
-                newSelected.add(fileId);
-            } else {
-                newSelected.delete(fileId);
-            }
-            setSelectedFiles(newSelected);
-        };
-
-        const handleSelectAll = (selectAll) => {
-            if (selectAll) {
-                setSelectedFiles(new Set(files.map(f => f.id)));
-            } else {
-                setSelectedFiles(new Set());
-            }
-        };
-
-        // Recursively get all files from selected items (including folder contents)
-        const getAllFilesToPush = async () => {
-            const allFiles = [];
-            const foldersToProcess = [];
-
-            // Separate files and folders
-            for (const fileId of selectedFiles) {
-                const file = files.find(f => f.id === fileId);
-                if (!file) continue;
-
-                if (file.kind === 'drive#folder') {
-                    foldersToProcess.push({ id: file.id, name: file.name, path: file.name });
-                } else {
-                    allFiles.push({ ...file, path: '' });
-                }
-            }
-
-            // Process folders recursively
-            let processedCount = 0;
-            while (foldersToProcess.length > 0) {
-                const folder = foldersToProcess.shift();
-                processedCount++;
-                showToast(`正在扫描文件夹 (${processedCount}): ${folder.name}`, 'info');
-
+            while (folders.length > 0) {
+                const folder = folders.shift();
+                showToastMsg(t('scanning')(folder.name), 'info');
                 try {
-                    const result = await getList(folder.id);
-                    if (result.files) {
-                        for (const file of result.files) {
-                            if (file.kind === 'drive#folder') {
-                                foldersToProcess.push({
-                                    id: file.id,
-                                    name: file.name,
-                                    path: `${folder.path}/${file.name}`
-                                });
-                            } else {
-                                allFiles.push({ ...file, path: folder.path });
-                            }
-                        }
+                    const res = await getList(folder.id);
+                    if (res.files) for (const f of res.files) {
+                        f.kind === 'drive#folder'
+                            ? folders.push({ id: f.id, name: f.name, path: `${folder.path}/${f.name}` })
+                            : allFiles.push({ ...f, path: folder.path });
                     }
-                } catch (error) {
-                    console.error(`Failed to get folder contents: ${folder.name}`, error);
-                }
+                } catch (e) { console.error('Folder scan failed:', folder.name, e); }
             }
-
             return allFiles;
         };
 
-        // Push files to Aria2
         const pushToAria = async () => {
-            if (selectedFiles.size === 0) {
-                showToast('请先选择要推送的文件', 'warning');
-                return;
-            }
+            if (selected.size === 0) return showToastMsg(t('selectFiles'), 'warning');
+            if (!config.rpcUrl) { showToastMsg(t('configFirst'), 'error'); setShowConfig(true); return; }
 
-            if (!config.rpcUrl) {
-                showToast('请先配置 Aria2', 'error');
-                setShowConfig(true);
-                return;
-            }
+            setPushing(true);
+            const filesToPush = await getAllFiles();
+            let success = 0, failed = 0;
+            setProgress({ cur: 0, total: filesToPush.length, success: 0, failed: 0 });
+            showToastMsg(t('preparing')(filesToPush.length), 'info');
 
-            setIsPushing(true);
-            showToast('正在获取文件列表...', 'info');
+            for (let i = 0; i < filesToPush.length; i++) {
+                const file = filesToPush[i];
+                try {
+                    const dl = await getDownloadUrl(file.id);
+                    if (dl.error_description) throw new Error(dl.error_description);
 
-            try {
-                const filesToPush = await getAllFilesToPush();
-                const total = filesToPush.length;
-                let success = 0;
-                let failed = 0;
+                    const params = [[ dl.web_content_link ], { out: dl.name }];
+                    if (config.downloadPath) params[1].dir = config.downloadPath + (file.path || '');
+                    if (config.customParams) config.customParams.split(';').forEach(p => {
+                        const [k, v] = p.split('=');
+                        if (k && v) params[1][k] = v;
+                    });
+                    if (config.rpcToken) params.unshift(`token:${config.rpcToken}`);
 
-                setProgress({ current: 0, total, success: 0, failed: 0 });
-                showToast(`准备推送 ${total} 个文件`, 'info');
-
-                for (let i = 0; i < filesToPush.length; i++) {
-                    const file = filesToPush[i];
-
-                    try {
-                        // Get download URL
-                        const downloadInfo = await getDownloadUrl(file.id);
-
-                        if (downloadInfo.error_description) {
-                            throw new Error(downloadInfo.error_description);
-                        }
-
-                        // Build Aria2 request
-                        const ariaData = {
-                            id: Date.now(),
-                            jsonrpc: "2.0",
-                            method: "aria2.addUri",
-                            params: [
-                                [downloadInfo.web_content_link],
-                                { out: downloadInfo.name }
-                            ]
-                        };
-
-                        // Add download path
-                        if (config.downloadPath) {
-                            ariaData.params[1].dir = config.downloadPath + (file.path || '');
-                        }
-
-                        // Add custom params
-                        if (config.customParams) {
-                            const customParams = config.customParams.split(';');
-                            customParams.forEach(param => {
-                                const [key, value] = param.split('=');
-                                if (key && value) {
-                                    ariaData.params[1][key] = value;
-                                }
-                            });
-                        }
-
-                        // Add token
-                        if (config.rpcToken) {
-                            ariaData.params.unshift(`token:${config.rpcToken}`);
-                        }
-
-                        // Push to Aria2
-                        const response = await pushToAria2(config.rpcUrl, ariaData);
-
-                        if (response.result) {
-                            success++;
-                            setFileStatuses(prev => ({ ...prev, [file.id]: 'success' }));
-                        } else {
-                            throw new Error(response.error?.message || 'Unknown error');
-                        }
-                    } catch (error) {
-                        failed++;
-                        setFileStatuses(prev => ({ ...prev, [file.id]: 'error' }));
-                        console.error(`Failed to push file: ${file.name}`, error);
-                    }
-
-                    setProgress({ current: i + 1, total, success, failed });
-
-                    // Small delay to avoid overwhelming the server
-                    if (i < filesToPush.length - 1) {
-                        await delay(100);
-                    }
+                    const res = await rpcCall(config.rpcUrl, { id: Date.now(), jsonrpc: '2.0', method: 'aria2.addUri', params });
+                    if (res.result) { success++; setStatuses(p => ({ ...p, [file.id]: 'success' })); }
+                    else throw new Error(res.error?.message || 'Unknown error');
+                } catch {
+                    failed++; setStatuses(p => ({ ...p, [file.id]: 'error' }));
                 }
-
-                if (failed === 0) {
-                    showToast(`推送完成！成功 ${success} 个文件`, 'success');
-                } else if (success === 0) {
-                    showToast(`推送失败！${failed} 个文件`, 'error');
-                } else {
-                    showToast(`推送完成：成功 ${success}，失败 ${failed}`, 'warning');
-                }
-            } catch (error) {
-                showToast(`推送失败: ${error.message}`, 'error');
-            } finally {
-                setIsPushing(false);
+                setProgress({ cur: i + 1, total: filesToPush.length, success, failed });
+                if (i < filesToPush.length - 1) await delay(100);
             }
+
+            showToastMsg(t('pushDone')(success, failed), failed === 0 ? 'success' : success === 0 ? 'error' : 'warning');
+            setPushing(false);
         };
 
-        const resetModal = () => {
-            setFiles([]);
-            setSelectedFiles(new Set());
-            setFileStatuses({});
-            setProgress({ current: 0, total: 0, success: 0, failed: 0 });
-        };
+        if (showConfig) return html`<${ConfigPanel} config=${config} onSave=${c => setConfigState(c)} onClose=${() => setShowConfig(false)} />`;
 
-        if (!isOpen) return null;
+        return html`
+            <div style="position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:10000"
+                 onClick=${e => e.target === e.currentTarget && onClose()}>
+                <${Toast} ...${{ ...toast }} />
+                <div style="background:#fff;border-radius:8px;padding:24px;box-shadow:0 10px 25px rgba(0,0,0,.2);width:90%;max-width:800px;max-height:80vh;display:flex;flex-direction:column"
+                     onClick=${e => e.stopPropagation()}>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;border-bottom:1px solid #ebeef5;padding-bottom:16px">
+                        <h2 style="margin:0;font-size:18px">${t('pushToAria2')}</h2>
+                        <button onClick=${onClose} style="background:none;border:none;font-size:24px;cursor:pointer;color:${colors.secondary}">×</button>
+                    </div>
 
-        if (showConfig) {
-            return React.createElement(ConfigPanel, {
-                config: config,
-                onConfigChange: setConfigState,
-                onClose: () => setShowConfig(false)
-            });
-        }
+                    <${ConnectionStatus} status=${connStatus} onTest=${doTest} testing=${testing} />
 
-        return React.createElement('div', { style: STYLES.overlay }, [
-            React.createElement(Toast, { key: 'toast', ...toast }),
-            React.createElement('div', { key: 'modal', style: STYLES.modal }, [
-                // Header
-                React.createElement('div', { key: 'header', style: STYLES.header }, [
-                    React.createElement('h2', { key: 'title', style: { margin: 0, fontSize: '18px', color: STYLES.text.primary } }, '推送到 Aria2'),
-                    React.createElement('button', {
-                        key: 'close',
-                        onClick: () => { resetModal(); onClose(); },
-                        style: { background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: STYLES.text.secondary }
-                    }, '×')
-                ]),
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:#f8f9fa;border-radius:6px;margin-bottom:16px">
+                        <label style="display:flex;align-items:center">
+                            <input type="checkbox" checked=${selected.size === files.length && files.length > 0}
+                                onChange=${e => selectAll(e.target.checked)} style="margin-right:8px" />
+                            ${t('selectAll')}
+                        </label>
+                        <div style="display:flex;align-items:center;gap:8px">
+                            <select value=${sortBy} onChange=${e => setSortBy(e.target.value)}
+                                style="padding:4px 8px;border-radius:4px;border:1px solid #dcdfe6">
+                                <option value="name">${t('name')}</option>
+                                <option value="size">${t('size')}</option>
+                                <option value="created_time">${t('createdTime')}</option>
+                                <option value="modified_time">${t('modifiedTime')}</option>
+                            </select>
+                            <select value=${sortDir} onChange=${e => setSortDir(e.target.value)}
+                                style="padding:4px 8px;border-radius:4px;border:1px solid #dcdfe6">
+                                <option value="asc">${t('asc')}</option>
+                                <option value="desc">${t('desc')}</option>
+                            </select>
+                        </div>
+                    </div>
 
-                // Connection Status
-                React.createElement(ConnectionStatus, {
-                    key: 'connection',
-                    status: connectionStatus,
-                    onTest: testConnection,
-                    isTesting: isTesting
-                }),
+                    <div style="flex:1;overflow-y:auto;max-height:400px">
+                        ${files.map(f => html`<${FileItem} key=${f.id} file=${f} selected=${selected.has(f.id)}
+                            onSelect=${toggleSelect} status=${statuses[f.id]} sortBy=${sortBy} />`)}
+                    </div>
 
-                // Toolbar
-                React.createElement('div', {
-                    key: 'toolbar',
-                    style: {
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                        padding: '12px', backgroundColor: '#f8f9fa', borderRadius: '6px', marginBottom: '16px'
-                    }
-                }, [
-                    React.createElement('label', { key: 'selectall', style: { display: 'flex', alignItems: 'center', cursor: 'pointer' } }, [
-                        React.createElement('input', {
-                            key: 'cb', type: 'checkbox',
-                            checked: selectedFiles.size === files.length && files.length > 0,
-                            onChange: (e) => handleSelectAll(e.target.checked),
-                            style: { marginRight: '8px' }
-                        }),
-                        React.createElement('span', { key: 'label' }, '全选')
-                    ]),
-                    React.createElement('div', { key: 'sort', style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [
-                        React.createElement('select', {
-                            key: 'sortby', value: sortBy,
-                            onChange: (e) => setSortBy(e.target.value),
-                            style: { padding: '4px 8px', borderRadius: '4px', border: '1px solid #dcdfe6' }
-                        }, [
-                            React.createElement('option', { key: 'name', value: 'name' }, '名称'),
-                            React.createElement('option', { key: 'size', value: 'size' }, '大小'),
-                            React.createElement('option', { key: 'created', value: 'created_time' }, '创建时间'),
-                            React.createElement('option', { key: 'modified', value: 'modified_time' }, '修改时间')
-                        ]),
-                        React.createElement('select', {
-                            key: 'sortdir', value: sortDirection,
-                            onChange: (e) => setSortDirection(e.target.value),
-                            style: { padding: '4px 8px', borderRadius: '4px', border: '1px solid #dcdfe6' }
-                        }, [
-                            React.createElement('option', { key: 'asc', value: 'asc' }, '升序'),
-                            React.createElement('option', { key: 'desc', value: 'desc' }, '降序')
-                        ])
-                    ])
-                ]),
+                    ${pushing && html`<div style="padding:12px;background:#f0f9ff;border-radius:6px;margin-top:16px">
+                        ${t('progress')(progress.cur, progress.total, progress.success, progress.failed)}</div>`}
 
-                // File List
-                React.createElement('div', {
-                    key: 'filelist',
-                    style: { flex: 1, overflowY: 'auto', maxHeight: '400px' }
-                }, files.map(file =>
-                    React.createElement(FileItem, {
-                        key: file.id,
-                        file: file,
-                        selected: selectedFiles.has(file.id),
-                        onSelect: handleFileSelect,
-                        status: fileStatuses[file.id],
-                        sortBy: sortBy
-                    })
-                )),
+                    <div style="display:flex;justify-content:flex-end;gap:12px;margin-top:20px;padding-top:16px;border-top:1px solid #ebeef5">
+                        <button onClick=${() => setShowConfig(true)}
+                            style="padding:8px 16px;border:1px solid #dcdfe6;border-radius:4px;cursor:pointer;background:#fff">${t('configAria2')}</button>
+                        <button onClick=${pushToAria} disabled=${pushing || selected.size === 0}
+                            style="padding:8px 16px;border:none;border-radius:4px;cursor:pointer;color:#fff;background:${pushing || selected.size === 0 ? '#c0c4cc' : colors.blue}">
+                            ${pushing ? t('pushing') : t('pushBtn')(selected.size)}</button>
+                    </div>
+                </div>
+            </div>`;
+    }
 
-                // Progress
-                isPushing && React.createElement('div', {
-                    key: 'progress',
-                    style: { padding: '12px', backgroundColor: '#f0f9ff', borderRadius: '6px', marginTop: '16px' }
-                }, `推送进度: ${progress.current}/${progress.total} (成功: ${progress.success}, 失败: ${progress.failed})`),
-
-                // Footer
-                React.createElement('div', {
-                    key: 'footer',
-                    style: {
-                        display: 'flex', justifyContent: 'flex-end', gap: '12px',
-                        marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #ebeef5'
-                    }
-                }, [
-                    React.createElement('button', {
-                        key: 'config',
-                        onClick: () => setShowConfig(true),
-                        style: { ...STYLES.button, ...STYLES.secondaryBtn }
-                    }, '配置 Aria2'),
-                    React.createElement('button', {
-                        key: 'push',
-                        onClick: pushToAria,
-                        disabled: isPushing || selectedFiles.size === 0,
-                        style: {
-                            ...STYLES.button,
-                            ...(isPushing || selectedFiles.size === 0 ? STYLES.disabledBtn : STYLES.primaryBtn)
-                        }
-                    }, isPushing ? '推送中...' : `推送到 Aria2 (${selectedFiles.size})`)
-                ])
-            ])
-        ]);
-    };
-
-    // ==================== App Initialization ====================
+    // ─── Init ───
 
     function initApp() {
         if (location.pathname === '/') return;
+        const ops = document.querySelector('.file-operations');
+        if (!ops) return setTimeout(initApp, 1000);
+        if (ops.querySelector('.aria2-helper-button')) return;
 
-        const fileOperations = document.querySelector('.file-operations');
-        if (fileOperations) {
-            if (fileOperations.querySelector('.aria2-helper-button')) return;
+        const li = document.createElement('li');
+        li.className = 'icon-with-label aria2-helper-button';
+        li.innerHTML = `
+            <a aria-label="${t('aria2Download')}" class="pp-link-button hover-able" href="javascript:void(0)">
+                <span class="icon-hover-able pp-icon" style="--icon-color:var(--color-secondary-text);--icon-color-hover:var(--color-primary);display:flex;flex:0 0 24px;width:24px;height:24px">
+                    <svg fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                    </svg>
+                </span>
+                <span class="label">${t('aria2Download')}</span>
+            </a>`;
 
-            const aria2Item = document.createElement('li');
-            aria2Item.className = 'icon-with-label aria2-helper-button';
-            aria2Item.innerHTML = `
-                <a aria-label="推送到Aria2" class="pp-link-button hover-able" href="javascript:void(0)">
-                    <span class="icon-hover-able pp-icon" style="--icon-color: var(--color-secondary-text); --icon-color-hover: var(--color-primary); display: flex; flex: 0 0 24px; width: 24px; height: 24px;">
-                        <svg fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
-                        </svg>
-                    </span>
-                    <span class="label">Aria2下载</span>
-                </a>
-            `;
+        li.addEventListener('click', e => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (document.getElementById('pikpak-aria2-helper-modal')) return;
+            const container = document.createElement('div');
+            container.id = 'pikpak-aria2-helper-modal';
+            document.body.appendChild(container);
+            render(html`<${Aria2Modal} onClose=${() => { render(null, container); container.remove(); }} />`, container);
+        });
 
-            aria2Item.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-
-                if (!document.getElementById('pikpak-aria2-helper-modal')) {
-                    const modalContainer = document.createElement('div');
-                    modalContainer.id = 'pikpak-aria2-helper-modal';
-                    document.body.appendChild(modalContainer);
-
-                    const root = createRoot(modalContainer);
-                    root.render(React.createElement(Aria2Modal, {
-                        isOpen: true,
-                        onClose: () => {
-                            root.unmount();
-                            document.body.removeChild(modalContainer);
-                        }
-                    }));
-                }
-            });
-
-            const divider = fileOperations.querySelector('.divider-in-operations');
-            if (divider) {
-                fileOperations.insertBefore(aria2Item, divider);
-            } else {
-                fileOperations.appendChild(aria2Item);
-            }
-        } else {
-            setTimeout(initApp, 1000);
-        }
+        const divider = ops.querySelector('.divider-in-operations');
+        divider ? ops.insertBefore(li, divider) : ops.appendChild(li);
     }
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initApp);
-    } else {
-        setTimeout(initApp, 1000);
-    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initApp);
+    else setTimeout(initApp, 1000);
 
 })();
