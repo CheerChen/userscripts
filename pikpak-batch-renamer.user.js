@@ -11,7 +11,7 @@
 // @name:fr      PikPak Renommeur JAV par lots
 // @name:de      PikPak JAV-Batch-Umbenennung
 // @namespace    https://github.com/CheerChen
-// @version      0.1.1
+// @version      0.1.2
 // @description  Batch rename video files and folders with JAV codes in PikPak.
 // @description:en Batch rename video files and folders with JAV codes in PikPak.
 // @description:ja PikPakで品番付きの動画ファイルやフォルダを一括リネーム。
@@ -57,6 +57,28 @@
     const heyzoRe = /^(heyzo)(\d{4})(?:\D|$)/i;
     const mgstageRe = /^(\d{3,4}[a-zA-Z]{2,6})(\d{3,6})(?:\D|$)/i;
     const standardRe = /^\d*([a-zA-Z]{2,6})(\d{3,6})(?:\D|$)/i;
+    const DEBUG_KEY = 'pikpak-batch-renamer-debug';
+    const commonDomainTokenRe = /^(com|net|org|me|cn|jp|tv|xyz|club)$/i;
+
+    const DEBUG_ENABLED = (() => {
+        try {
+            const v = localStorage.getItem(DEBUG_KEY);
+            if (v == null) return true; // default on for troubleshooting parser/query mismatches
+            return v === '1' || v === 'true';
+        } catch {
+            return true;
+        }
+    })();
+
+    function debugLog(label, payload) {
+        if (!DEBUG_ENABLED) return;
+        if (payload === undefined) console.log(`[PBR] ${label}`);
+        else console.log(`[PBR] ${label}`, payload);
+    }
+
+    function debugRawHtml(label, url, resp) {
+        return;
+    }
 
     function trimLeadingZeros(s) {
         let n = parseInt(s, 10);
@@ -87,10 +109,62 @@
         return { number: '', rawNumber: '' };
     }
 
+    function parseNumberParts(number) {
+        const m = number.match(/^([0-9]*[A-Z]+)-(\d+)$/);
+        if (!m) return null;
+        return { series: m[1].replace(/^\d+/, '').toLowerCase(), numRaw: m[2], num: parseInt(m[2], 10) };
+    }
+
+    function extractExt(filename) {
+        const m = filename.match(/\.([a-z0-9]{2,5})$/i);
+        if (!m) return { ext: '', base: filename };
+        if (partTokenRe.test(m[1])) return { ext: '', base: filename }; // ".part1" is a split marker, not extension
+        const ext = '.' + m[1].toLowerCase();
+        return { ext, base: filename.substring(0, filename.length - ext.length) };
+    }
+
+    function isLikelyWrappedCode(nameLower, number) {
+        const p = parseNumberParts(number);
+        if (!p) return false;
+        const noPad = String(p.num);
+        const re = new RegExp(`[\\(\\[]\\d*${p.series}[-_ ]*0*${noPad}[\\)\\]]`, 'i');
+        return re.test(nameLower);
+    }
+
+    function scoreCandidate({ raw, number, idx, tokens, nameLower }) {
+        const p = parseNumberParts(number);
+        if (!p) return -999;
+
+        let score = 0;
+        if (p.series.length >= 4) score += 3;
+        if (p.num >= 1000) score += 2;
+        if (idx > 0) score += 1;
+        if (isLikelyWrappedCode(nameLower, number)) score += 4;
+        if (nameLower.includes(`@${raw}@`)) score -= 6;
+        if (/^\d+[A-Z]+-/.test(number)) score -= 2;
+
+        const next = (tokens[idx + 1] || '').toLowerCase();
+        if (commonDomainTokenRe.test(next)) score -= 6;
+        if (/^(www|com|net|org|me)$/.test(raw)) score -= 8;
+        return score;
+    }
+
+    function buildNumberTokens(tokens, idx) {
+        const t = (tokens[idx] || '').toLowerCase();
+        if (!t || !hasLetter(t)) return [];
+        if (partTokenRe.test(t) || tagTokenRe.test(t)) return [];
+        const out = [t];
+        // e.g. "1155crvr00238" -> additionally try "crvr00238"
+        const withoutVendorPrefix = t.match(/^\d{3,4}([a-z]{2,6}\d{3,6})$/i)?.[1];
+        if (withoutVendorPrefix) out.push(withoutVendorPrefix.toLowerCase());
+        const next = tokens[idx + 1];
+        if (next && endsWithLetter(t) && isPureDigits(next) && next.length >= 3) out.push(t + next);
+        return out;
+    }
+
     function parse(filename) {
-        const dotIdx = filename.lastIndexOf('.');
-        const ext = dotIdx > 0 ? filename.substring(dotIdx).toLowerCase() : '';
-        let name = dotIdx > 0 ? filename.substring(0, dotIdx) : filename;
+        const { ext, base } = extractExt(filename);
+        let name = base;
 
         const res = { number: '', rawNumber: '', part: 0, tags: [], ext, sourceSite: '' };
 
@@ -103,18 +177,7 @@
         const tokens = name.split(tokenizeRe).filter(Boolean);
         if (tokens.length === 0) return res;
 
-        let idStart = tokens.findIndex(t => hasLetter(t));
-        if (idStart < 0) return res;
-
-        let raw = tokens[idStart].toLowerCase();
-        let next = idStart + 1;
-
-        if (next < tokens.length && endsWithLetter(raw) && isPureDigits(tokens[next]) && tokens[next].length >= 3) {
-            raw += tokens[next];
-            next++;
-        }
-
-        for (let i = next; i < tokens.length; i++) {
+        for (let i = 0; i < tokens.length; i++) {
             const t = tokens[i];
             const pm = t.match(partTokenRe);
             if (pm) { if (res.part === 0) res.part = parseInt(pm[1], 10); continue; }
@@ -123,9 +186,40 @@
         }
 
         res.tags = [...new Set(res.tags)];
-        const { number, rawNumber } = extractNumber(raw);
-        res.number = number;
-        res.rawNumber = rawNumber;
+
+        const candidates = [];
+        const seen = new Set();
+        const nameLower = name.toLowerCase();
+
+        for (let i = 0; i < tokens.length; i++) {
+            for (const raw of buildNumberTokens(tokens, i)) {
+                const { number, rawNumber } = extractNumber(raw);
+                if (!number) continue;
+                const key = `${number}|${rawNumber}|${i}`;
+                if (seen.has(key)) continue;
+                seen.add(key);
+                candidates.push({
+                    idx: i,
+                    raw,
+                    number,
+                    rawNumber,
+                    score: scoreCandidate({ raw, number, idx: i, tokens, nameLower }),
+                });
+            }
+        }
+
+        candidates.sort((a, b) => b.score - a.score || a.idx - b.idx);
+        if (candidates[0]) {
+            res.number = candidates[0].number;
+            res.rawNumber = candidates[0].rawNumber;
+        }
+
+        debugLog('parse', {
+            filename,
+            tokens,
+            selected: { number: res.number, rawNumber: res.rawNumber, part: res.part, tags: res.tags, ext: res.ext },
+            candidates: candidates.map(c => ({ idx: c.idx, raw: c.raw, number: c.number, rawNumber: c.rawNumber, score: c.score })),
+        });
         return res;
     }
 
@@ -191,7 +285,19 @@
     function parseDetailPage(html) {
         const doc = new DOMParser().parseFromString(html, 'text/html');
         let name = doc.querySelector('.blockquote-like p')?.textContent || null;
-        const date = doc.querySelector('time.date.published')?.getAttribute('datetime') || null;
+        if (!name) {
+            const entry = doc.querySelector('.entry-title');
+            if (entry) {
+                const clone = entry.cloneNode(true);
+                clone.querySelectorAll('.entry-subtitle, span').forEach(n => n.remove());
+                name = clone.textContent || null;
+            }
+        }
+        const date =
+            doc.querySelector('time.date.published')?.getAttribute('datetime') ||
+            doc.querySelector('meta[property="article:published_time"]')?.getAttribute('content')?.slice(0, 10) ||
+            null;
+        if (name) name = name.trim();
         if (name) name = name.replace(/[\/:*?"<>|\x00-\x1F]/g, '_');
         return { title: name, date };
     }
@@ -199,24 +305,78 @@
     function buildDirectUrl(keyword) { return `https://av-wiki.net/${keyword.toLowerCase()}/`; }
     function buildSearchUrl(term) { return `https://av-wiki.net/?s=${encodeURIComponent(term)}&post_type=product`; }
 
+    function extractSlug(url) {
+        try {
+            const path = new URL(url).pathname;
+            return path.split('/').filter(Boolean)[0] || '';
+        } catch {
+            return '';
+        }
+    }
+
+    function numberMentionVariants(number) {
+        const p = parseNumberParts(number);
+        if (!p) return [];
+        const noPad = String(p.num);
+        const pad3 = noPad.padStart(3, '0');
+        return [...new Set([`${p.series}${noPad}`, `${p.series}${pad3}`, `${p.series}${p.numRaw}`])];
+    }
+
+    function containsExpectedNumber(text, number) {
+        const norm = (text || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+        return numberMentionVariants(number).some(v => norm.includes(v));
+    }
+
+    function isSameNumberBySlug(slug, number) {
+        const p = parseNumberParts(number);
+        if (!p) return false;
+        const m = slug.toLowerCase().match(/^(\d*[a-z]{2,6})[-_]?0*(\d{1,6})(?:$|[-_])/);
+        if (!m) return false;
+        const series = m[1].replace(/^\d+/, '');
+        const num = parseInt(m[2], 10);
+        return series === p.series && num === p.num;
+    }
+
     async function queryAVwiki(parsed) {
         if (!parsed.number) throw new Error('No number');
 
-        const directResp = await httpRequest({ url: buildDirectUrl(parsed.number) });
-        if (directResp.status === 200 && directResp.responseText.includes('blockquote-like')) {
+        const directUrl = buildDirectUrl(parsed.number);
+        const directResp = await httpRequest({ url: directUrl });
+        debugRawHtml('direct', directUrl, directResp);
+        if (directResp.status === 200) {
             const { title, date } = parseDetailPage(directResp.responseText);
-            if (title) return { title, date };
+            debugLog('direct-parse', { number: parsed.number, title, date });
+            if (title && containsExpectedNumber(title, parsed.number)) return { title, date };
         }
 
         // Fallback: search
-        const searchResp = await httpRequest({ url: buildSearchUrl(parsed.rawNumber) });
+        const searchTerm = parsed.rawNumber || parsed.number.toLowerCase().replace('-', '');
+        const searchUrl = buildSearchUrl(searchTerm);
+        const searchResp = await httpRequest({ url: searchUrl });
+        debugRawHtml('search', searchUrl, searchResp);
         const doc = new DOMParser().parseFromString(searchResp.responseText, 'text/html');
-        const series = parsed.number.match(/[a-zA-Z]+/)?.[0]?.toLowerCase();
-        for (const a of doc.querySelectorAll('.read-more a')) {
-            if (series && a.href.toLowerCase().includes(series)) {
-                const detailResp = await httpRequest({ url: a.href });
+
+        let links = [...doc.querySelectorAll('.read-more a')].map(a => a.href).filter(Boolean);
+        if (links.length === 0) {
+            links = [...doc.querySelectorAll('a[href^="https://av-wiki.net/"]')]
+                .map(a => a.href)
+                .filter(href => /^https:\/\/av-wiki\.net\/[^/?#]+\/?$/i.test(href));
+        }
+        links = [...new Set(links)];
+        debugLog('search-candidates', { number: parsed.number, links });
+
+        for (const link of links) {
+            const slug = extractSlug(link);
+            const matchedBySlug = isSameNumberBySlug(slug, parsed.number);
+            debugLog('search-link-check', { link, slug, number: parsed.number, matchedBySlug });
+            if (!matchedBySlug) continue;
+
+            const detailResp = await httpRequest({ url: link });
+            debugRawHtml('search-detail', link, detailResp);
+            if (detailResp.status === 200) {
                 const { title, date } = parseDetailPage(detailResp.responseText);
-                if (title) return { title, date };
+                debugLog('search-detail-parse', { link, title, date });
+                if (title && containsExpectedNumber(title, parsed.number)) return { title, date };
             }
         }
         throw new Error('Not found');
@@ -335,7 +495,7 @@
     function FileItem({ file, selected, onSelect, status, newName, sortBy }) {
         const icons = { valid: '✅', invalid: '❌', loading: '⏳' };
         const formatInfo = f => {
-            const fmt = (b) => { const k = 1024; const s = ['B','KB','MB','GB']; const i = Math.floor(Math.log(b)/Math.log(k)); return (b/Math.pow(k,i)).toFixed(1)+' '+s[i]; };
+            const fmt = (b) => { const k = 1024; const s = ['B', 'KB', 'MB', 'GB']; const i = Math.floor(Math.log(b) / Math.log(k)); return (b / Math.pow(k, i)).toFixed(1) + ' ' + s[i]; };
             if (sortBy === 'size') return f.size && parseInt(f.size) > 0 ? fmt(parseInt(f.size)) : '';
             if (sortBy === 'created_time' || sortBy === 'modified_time') return f[sortBy] ? new Date(f[sortBy]).toLocaleString() : '';
             return '';
@@ -406,13 +566,18 @@
                 await Promise.all(batch.map(async file => {
                     const isFile = file.kind !== 'drive#folder';
                     const parsed = parse(file.name);
-                    if (!parsed.number) { sts[file.id] = 'invalid'; return; }
+                    if (!parsed.number) {
+                        debugLog('validate-invalid-no-number', { file: file.name, parsed });
+                        sts[file.id] = 'invalid';
+                        return;
+                    }
 
                     sts[file.id] = 'loading';
                     setStatuses(p => ({ ...p, ...sts }));
 
                     try {
                         const info = await queryAVwiki(parsed);
+                        debugLog('validate-hit', { file: file.name, parsed, info });
                         sts[file.id] = 'valid';
                         let ext = parsed.ext;
                         if (!ext && isFile && config.fixFileExtension && file.mime_type) {
@@ -421,7 +586,10 @@
                         }
                         let finalName = config.addDatePrefix && info.date ? `${info.date} ${info.title}` : info.title;
                         names[file.id] = ext ? `${finalName}${ext}` : finalName;
-                    } catch { sts[file.id] = 'invalid'; }
+                    } catch (e) {
+                        debugLog('validate-miss', { file: file.name, parsed, error: e?.message || String(e) });
+                        sts[file.id] = 'invalid';
+                    }
                 }));
                 setStatuses(p => ({ ...p, ...sts }));
                 setNewNames(p => ({ ...p, ...names }));
@@ -536,17 +704,17 @@
                     <div style="display:flex;justify-content:flex-end;gap:12px;margin-top:20px;padding-top:16px;border-top:1px solid #ebeef5">
                         ${renaming && html`<div style="flex:1;color:${colors.secondary}">${t('progress')(progress.cur, progress.total)}</div>`}
                         ${!results && !confirm && [
-                            html`<button onClick=${reset} style="padding:8px 16px;border:1px solid #dcdfe6;border-radius:4px;cursor:pointer;background:#fff">${t('cancel')}</button>`,
-                            html`<button onClick=${() => setConfirm(true)} disabled=${validCount === 0}
+                html`<button onClick=${reset} style="padding:8px 16px;border:1px solid #dcdfe6;border-radius:4px;cursor:pointer;background:#fff">${t('cancel')}</button>`,
+                html`<button onClick=${() => setConfirm(true)} disabled=${validCount === 0}
                                 style="padding:8px 16px;border:none;border-radius:4px;cursor:pointer;background:${validCount === 0 ? '#c0c4cc' : colors.blue};color:#fff">${t('next')}</button>`
-                        ]}
+            ]}
                         ${!results && confirm && [
-                            html`<button onClick=${() => setConfirm(false)} disabled=${renaming}
+                html`<button onClick=${() => setConfirm(false)} disabled=${renaming}
                                 style="padding:8px 16px;border:1px solid #dcdfe6;border-radius:4px;cursor:pointer;background:#fff">${t('back')}</button>`,
-                            html`<button onClick=${performRename} disabled=${renaming}
+                html`<button onClick=${performRename} disabled=${renaming}
                                 style="padding:8px 16px;border:none;border-radius:4px;cursor:pointer;background:${renaming ? '#c0c4cc' : colors.blue};color:#fff">
                                 ${renaming ? t('renaming') : t('confirming')}</button>`
-                        ]}
+            ]}
                     </div>
                 </div>
             </div>`;
