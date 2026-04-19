@@ -11,7 +11,7 @@
 // @name:fr      PikPak Renommeur JAV par lots
 // @name:de      PikPak JAV-Batch-Umbenennung
 // @namespace    https://github.com/CheerChen
-// @version      0.1.2
+// @version      0.1.3
 // @description  Batch rename video files and folders with JAV codes in PikPak.
 // @description:en Batch rename video files and folders with JAV codes in PikPak.
 // @description:ja PikPakで品番付きの動画ファイルやフォルダを一括リネーム。
@@ -58,6 +58,7 @@
     const mgstageRe = /^(\d{3,4}[a-zA-Z]{2,6})(\d{3,6})(?:\D|$)/i;
     const standardRe = /^\d*([a-zA-Z]{2,6})(\d{3,6})(?:\D|$)/i;
     const DEBUG_KEY = 'pikpak-batch-renamer-debug';
+    const FLOAT_BUTTON_POS_KEY = 'pikpak-batch-renamer-fab-pos';
     const commonDomainTokenRe = /^(com|net|org|me|cn|jp|tv|xyz|club)$/i;
 
     const DEBUG_ENABLED = (() => {
@@ -305,6 +306,58 @@
     function buildDirectUrl(keyword) { return `https://av-wiki.net/${keyword.toLowerCase()}/`; }
     function buildSearchUrl(term) { return `https://av-wiki.net/?s=${encodeURIComponent(term)}&post_type=product`; }
 
+    function buildDirectUrlCandidates(parsed) {
+        const urls = [];
+        const seen = new Set();
+        const add = slug => {
+            if (!slug) return;
+            const url = `https://av-wiki.net/${slug.toLowerCase()}/`;
+            if (seen.has(url)) return;
+            seen.add(url);
+            urls.push(url);
+        };
+
+        const fromNumber = parsed.number.toLowerCase();
+        add(fromNumber);
+
+        const raw = (parsed.rawNumber || '').toLowerCase();
+        const rawMatch = raw.match(/^(\d*[a-z]{2,10})(\d{1,6})$/);
+        if (rawMatch) {
+            const series = rawMatch[1];
+            const num = String(parseInt(rawMatch[2], 10));
+            add(`${series}-${num}`);
+            add(`${series}-${rawMatch[2]}`);
+        }
+
+        return urls;
+    }
+
+    function buildSearchTerms(parsed) {
+        const terms = [];
+        const seen = new Set();
+        const add = term => {
+            if (!term) return;
+            if (seen.has(term)) return;
+            seen.add(term);
+            terms.push(term);
+        };
+
+        add(parsed.number);
+        add(parsed.number?.toLowerCase());
+        add(parsed.rawNumber);
+
+        const raw = (parsed.rawNumber || '').toLowerCase();
+        const rawMatch = raw.match(/^(\d*[a-z]{2,10})(\d{1,6})$/);
+        if (rawMatch) {
+            const series = rawMatch[1];
+            const num = String(parseInt(rawMatch[2], 10));
+            add(`${series}-${num}`);
+            add(`${series}-${rawMatch[2]}`);
+        }
+
+        return terms;
+    }
+
     function extractSlug(url) {
         try {
             const path = new URL(url).pathname;
@@ -337,46 +390,69 @@
         return series === p.series && num === p.num;
     }
 
+    function extractSearchResultLinks(doc) {
+        const selectors = [
+            '.read-more a[href^="https://av-wiki.net/"]',
+            '.archive-list .read-more a[href^="https://av-wiki.net/"]',
+            '.archive-list a[href^="https://av-wiki.net/"][title]',
+            '.column-flex .archive-list a[href^="https://av-wiki.net/"][title]',
+        ];
+
+        const links = [];
+        const seen = new Set();
+        for (const selector of selectors) {
+            for (const a of doc.querySelectorAll(selector)) {
+                const href = a.href;
+                if (!href) continue;
+                if (!/^https:\/\/av-wiki\.net\/[^/?#]+\/?$/i.test(href)) continue;
+                if (seen.has(href)) continue;
+                seen.add(href);
+                links.push(href);
+            }
+        }
+        return links;
+    }
+
     async function queryAVwiki(parsed) {
         if (!parsed.number) throw new Error('No number');
 
-        const directUrl = buildDirectUrl(parsed.number);
-        const directResp = await httpRequest({ url: directUrl });
-        debugRawHtml('direct', directUrl, directResp);
-        if (directResp.status === 200) {
+        const directUrls = buildDirectUrlCandidates(parsed);
+        debugLog('direct-candidates', { number: parsed.number, rawNumber: parsed.rawNumber, directUrls });
+        for (const directUrl of directUrls) {
+            const directResp = await httpRequest({ url: directUrl });
+            debugRawHtml('direct', directUrl, directResp);
+            if (directResp.status !== 200) continue;
+
             const { title, date } = parseDetailPage(directResp.responseText);
-            debugLog('direct-parse', { number: parsed.number, title, date });
+            debugLog('direct-parse', { number: parsed.number, directUrl, title, date });
             if (title && containsExpectedNumber(title, parsed.number)) return { title, date };
         }
 
         // Fallback: search
-        const searchTerm = parsed.rawNumber || parsed.number.toLowerCase().replace('-', '');
-        const searchUrl = buildSearchUrl(searchTerm);
-        const searchResp = await httpRequest({ url: searchUrl });
-        debugRawHtml('search', searchUrl, searchResp);
-        const doc = new DOMParser().parseFromString(searchResp.responseText, 'text/html');
+        const searchTerms = buildSearchTerms(parsed);
+        debugLog('search-terms', { number: parsed.number, rawNumber: parsed.rawNumber, searchTerms });
+        for (const searchTerm of searchTerms) {
+            const searchUrl = buildSearchUrl(searchTerm);
+            const searchResp = await httpRequest({ url: searchUrl });
+            debugRawHtml('search', searchUrl, searchResp);
+            const doc = new DOMParser().parseFromString(searchResp.responseText, 'text/html');
 
-        let links = [...doc.querySelectorAll('.read-more a')].map(a => a.href).filter(Boolean);
-        if (links.length === 0) {
-            links = [...doc.querySelectorAll('a[href^="https://av-wiki.net/"]')]
-                .map(a => a.href)
-                .filter(href => /^https:\/\/av-wiki\.net\/[^/?#]+\/?$/i.test(href));
-        }
-        links = [...new Set(links)];
-        debugLog('search-candidates', { number: parsed.number, links });
+            const links = extractSearchResultLinks(doc);
+            debugLog('search-candidates', { number: parsed.number, searchTerm, links });
 
-        for (const link of links) {
-            const slug = extractSlug(link);
-            const matchedBySlug = isSameNumberBySlug(slug, parsed.number);
-            debugLog('search-link-check', { link, slug, number: parsed.number, matchedBySlug });
-            if (!matchedBySlug) continue;
+            for (const link of links) {
+                const slug = extractSlug(link);
+                const matchedBySlug = isSameNumberBySlug(slug, parsed.number);
+                debugLog('search-link-check', { link, slug, number: parsed.number, searchTerm, matchedBySlug });
+                if (!matchedBySlug) continue;
 
-            const detailResp = await httpRequest({ url: link });
-            debugRawHtml('search-detail', link, detailResp);
-            if (detailResp.status === 200) {
-                const { title, date } = parseDetailPage(detailResp.responseText);
-                debugLog('search-detail-parse', { link, title, date });
-                if (title && containsExpectedNumber(title, parsed.number)) return { title, date };
+                const detailResp = await httpRequest({ url: link });
+                debugRawHtml('search-detail', link, detailResp);
+                if (detailResp.status === 200) {
+                    const { title, date } = parseDetailPage(detailResp.responseText);
+                    debugLog('search-detail-parse', { link, title, date });
+                    if (title && containsExpectedNumber(title, parsed.number)) return { title, date };
+                }
             }
         }
         throw new Error('Not found');
@@ -722,39 +798,203 @@
 
     // ─── Init ───
 
-    function initApp() {
-        if (location.pathname === '/') return;
-        const ops = document.querySelector('.file-operations');
-        if (!ops) return setTimeout(initApp, 1000);
-        if (ops.querySelector('.batch-rename-button')) return;
-
-        const li = document.createElement('li');
-        li.className = 'icon-with-label batch-rename-button';
-        li.innerHTML = `
-            <a aria-label="${t('batchRename')}" class="pp-link-button hover-able" href="javascript:void(0)">
-                <span class="icon-hover-able pp-icon" style="--icon-color:var(--color-secondary-text);--icon-color-hover:var(--color-primary);display:flex;flex:0 0 24px;width:24px;height:24px">
-                    <svg fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
-                    </svg>
-                </span>
-                <span class="label">${t('batchRename')}</span>
-            </a>`;
-
-        li.addEventListener('click', e => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (document.getElementById('pikpak-batch-renamer-modal')) return;
-            const container = document.createElement('div');
-            container.id = 'pikpak-batch-renamer-modal';
-            document.body.appendChild(container);
-            render(html`<${BatchRenameModal} onClose=${() => { render(null, container); container.remove(); }} />`, container);
-        });
-
-        const divider = ops.querySelector('.divider-in-operations');
-        divider ? ops.insertBefore(li, divider) : ops.appendChild(li);
+    function openBatchRenameModal() {
+        if (document.getElementById('pikpak-batch-renamer-modal')) return;
+        const container = document.createElement('div');
+        container.id = 'pikpak-batch-renamer-modal';
+        document.body.appendChild(container);
+        render(html`<${BatchRenameModal} onClose=${() => { render(null, container); container.remove(); }} />`, container);
     }
 
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initApp);
-    else setTimeout(initApp, 1000);
+    function isFabVisible() {
+        return location.pathname !== '/';
+    }
+
+    function loadFabPosition() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(FLOAT_BUTTON_POS_KEY) || 'null');
+            if (!saved || typeof saved.left !== 'number' || typeof saved.top !== 'number') return null;
+            return saved;
+        } catch {
+            return null;
+        }
+    }
+
+    function saveFabPosition(pos) {
+        try {
+            localStorage.setItem(FLOAT_BUTTON_POS_KEY, JSON.stringify(pos));
+        } catch { }
+    }
+
+    function clampFabPosition(left, top, width, height) {
+        const pad = 12;
+        const maxLeft = Math.max(pad, window.innerWidth - width - pad);
+        const maxTop = Math.max(pad, window.innerHeight - height - pad);
+        return {
+            left: Math.min(Math.max(pad, left), maxLeft),
+            top: Math.min(Math.max(pad, top), maxTop),
+        };
+    }
+
+    function applyFabPosition(button, pos) {
+        const rect = button.getBoundingClientRect();
+        const next = clampFabPosition(pos.left, pos.top, rect.width, rect.height);
+        button.style.left = `${next.left}px`;
+        button.style.top = `${next.top}px`;
+        button.style.right = 'auto';
+        button.style.bottom = 'auto';
+        return next;
+    }
+
+    function mountFloatingButton() {
+        if (document.getElementById('pikpak-batch-renamer-fab')) return;
+
+        const button = document.createElement('div');
+        button.id = 'pikpak-batch-renamer-fab';
+        button.className = 'menu-box';
+        button.style.cssText = [
+            'position:fixed',
+            'right:20px',
+            'bottom:24px',
+            'z-index:9999',
+            'display:flex',
+            'justify-content:flex-end',
+            'align-items:center',
+            'cursor:grab',
+            'user-select:none',
+            '-webkit-user-select:none',
+            'touch-action:none',
+        ].join(';');
+        button.innerHTML = `
+            <div class="control-button" style="
+                display:flex;
+                align-items:center;
+                justify-content:center;
+                width:64px;
+                height:64px;
+                border-radius:20px;
+                background:#306eff;
+                border:1px solid rgba(48,110,255,.28);
+                box-shadow:0 12px 30px rgba(48,110,255,.28);
+                transition:transform var(--transition,0.2s cubic-bezier(0.645, 0.045, 0.355, 1)), box-shadow var(--transition,0.2s cubic-bezier(0.645, 0.045, 0.355, 1)), background var(--transition,0.2s cubic-bezier(0.645, 0.045, 0.355, 1));
+            ">
+                <div class="transfer-entry" aria-label="${t('batchRename')}" title="${t('batchRename')}" style="
+                    display:flex;
+                    align-items:center;
+                    justify-content:center;
+                    width:28px;
+                    height:28px;
+                    color:#fff;
+                ">
+                    <svg fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width:24px;height:24px">
+                        <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+                    </svg>
+                </div>
+            </div>`;
+        const controlButton = button.querySelector('.control-button');
+        if (controlButton) {
+            controlButton.addEventListener('mouseenter', () => {
+                controlButton.style.transform = 'translateY(-1px)';
+                controlButton.style.boxShadow = '0 16px 34px rgba(48,110,255,.34)';
+                controlButton.style.background = '#4a80ff';
+            });
+            controlButton.addEventListener('mouseleave', () => {
+                controlButton.style.transform = 'translateY(0)';
+                controlButton.style.boxShadow = '0 12px 30px rgba(48,110,255,.28)';
+                controlButton.style.background = '#306eff';
+            });
+        }
+
+        let pointerId = null;
+        let startX = 0;
+        let startY = 0;
+        let originLeft = 0;
+        let originTop = 0;
+        let dragging = false;
+
+        const onPointerMove = e => {
+            if (e.pointerId !== pointerId) return;
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            if (!dragging && Math.hypot(dx, dy) >= 6) {
+                dragging = true;
+                button.style.cursor = 'grabbing';
+            }
+            if (!dragging) return;
+            const next = applyFabPosition(button, { left: originLeft + dx, top: originTop + dy });
+            saveFabPosition(next);
+        };
+
+        const finishPointer = e => {
+            if (e.pointerId !== pointerId) return;
+            if (button.hasPointerCapture(pointerId)) button.releasePointerCapture(pointerId);
+            button.style.cursor = 'grab';
+            const wasDragging = dragging;
+            pointerId = null;
+            dragging = false;
+            if (!wasDragging) openBatchRenameModal();
+        };
+
+        button.addEventListener('pointerdown', e => {
+            if (e.button !== 0) return;
+            const rect = button.getBoundingClientRect();
+            pointerId = e.pointerId;
+            startX = e.clientX;
+            startY = e.clientY;
+            originLeft = rect.left;
+            originTop = rect.top;
+            dragging = false;
+            button.setPointerCapture(pointerId);
+            e.preventDefault();
+        });
+        button.addEventListener('pointermove', onPointerMove);
+        button.addEventListener('pointerup', finishPointer);
+        button.addEventListener('pointercancel', finishPointer);
+        button.addEventListener('lostpointercapture', e => {
+            if (e.pointerId !== pointerId) return;
+            pointerId = null;
+            dragging = false;
+            button.style.cursor = 'grab';
+        });
+
+        document.body.appendChild(button);
+        const savedPos = loadFabPosition();
+        if (savedPos) {
+            const next = applyFabPosition(button, savedPos);
+            saveFabPosition(next);
+        }
+        button.style.display = isFabVisible() ? 'flex' : 'none';
+
+        const syncVisibility = () => {
+            button.style.display = isFabVisible() ? 'flex' : 'none';
+            if (button.style.display !== 'none') {
+                const rect = button.getBoundingClientRect();
+                const next = clampFabPosition(rect.left, rect.top, rect.width, rect.height);
+                button.style.left = `${next.left}px`;
+                button.style.top = `${next.top}px`;
+                button.style.right = 'auto';
+                button.style.bottom = 'auto';
+                saveFabPosition(next);
+            }
+        };
+
+        window.addEventListener('resize', syncVisibility);
+        window.addEventListener('popstate', syncVisibility);
+
+        const { pushState, replaceState } = history;
+        history.pushState = function (...args) {
+            const out = pushState.apply(this, args);
+            syncVisibility();
+            return out;
+        };
+        history.replaceState = function (...args) {
+            const out = replaceState.apply(this, args);
+            syncVisibility();
+            return out;
+        };
+    }
+
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountFloatingButton);
+    else setTimeout(mountFloatingButton, 1000);
 
 })();
