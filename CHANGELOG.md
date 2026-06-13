@@ -21,6 +21,13 @@
 
 ## PikPak Batch JAV Renamer Assistant
 
+### v0.1.3 (2026-04-20)
+- Add floating action button entry for batch renaming
+- Support draggable button position for better placement on different layouts
+
+### v0.1.2 (2026-04-07)
+- Add debug logging for troubleshooting rename workflow issues
+
 ### v0.1.1 (2026-04-03)
 - Add bilingual UI (Chinese/English), auto-switches based on browser language
 - Persist sort settings across sessions
@@ -79,6 +86,19 @@
 - Aria2 RPC connection testing
 - Configurable RPC URL, token, download path, and custom parameters
 - Integrated into PikPak native toolbar
+
+---
+
+## Zoom Recording CC Extractor
+
+### v1.0 (2026-06-09)
+- Initial release
+- Extract closed captions (VTT) from Zoom cloud recording playback pages
+- Intercept both XMLHttpRequest and fetch requests for CC resources
+- Provide in-page UI for previewing captured subtitles
+- Support downloading subtitles as VTT or plain text
+- Support copying extracted plain text to clipboard
+- Add manual extraction button as fallback when auto-capture misses the request
 
 ---
 
