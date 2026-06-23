@@ -1,27 +1,27 @@
 // ==UserScript==
-// @name         PikPak Batch JAV Renamer Assistant
-// @name:en      PikPak Batch JAV Renamer Assistant
-// @name:ja      PikPak バッチJAV リネームアシスタント
+// @name         PikPak Batch Renamer Assistant
+// @name:en      PikPak Batch Renamer Assistant
+// @name:ja      PikPak バッチリネームアシスタント
 // @name:zh-CN   PikPak 批量番号重命名助手
 // @name:zh-TW   PikPak 批量番號重命名助手
-// @name:ko      PikPak 일괄 JAV 이름 변경 도우미
+// @name:ko      PikPak 일괄 이름 변경 도우미
 // @name:ru      PikPak Пакетное переименование JAV
-// @name:es      PikPak Renombrador JAV por lotes
-// @name:pt-BR   PikPak Renomeador JAV em lote
-// @name:fr      PikPak Renommeur JAV par lots
+// @name:es      PikPak Renombrador por lotes
+// @name:pt-BR   PikPak Renomeador em lote
+// @name:fr      PikPak Renommeur par lots
 // @name:de      PikPak JAV-Batch-Umbenennung
 // @namespace    https://github.com/CheerChen
-// @version      0.1.3
-// @description  Batch rename video files and folders with JAV codes in PikPak.
-// @description:en Batch rename video files and folders with JAV codes in PikPak.
+// @version      0.1.4
+// @description  Batch rename video files and folders with codes in PikPak.
+// @description:en Batch rename video files and folders with codes in PikPak.
 // @description:ja PikPakで品番付きの動画ファイルやフォルダを一括リネーム。
 // @description:zh-CN 在 PikPak 中批量重命名带有番号的视频文件或者文件夹。
 // @description:zh-TW 在 PikPak 中批量重新命名帶有番號的影片檔案或資料夾。
-// @description:ko PikPak에서 JAV 코드가 포함된 비디오 파일과 폴더를 일괄 이름 변경합니다.
-// @description:ru Пакетное переименование видеофайлов и папок с кодами JAV в PikPak.
-// @description:es Renombrar por lotes archivos de video y carpetas con códigos JAV en PikPak.
-// @description:pt-BR Renomear em lote arquivos de vídeo e pastas com códigos JAV no PikPak.
-// @description:fr Renommer par lots les fichiers vidéo et dossiers avec des codes JAV dans PikPak.
+// @description:ko PikPak에서 코드가 포함된 비디오 파일과 폴더를 일괄 이름 변경합니다.
+// @description:ru Пакетное переименование видеофайлов и папок с кодами в PikPak.
+// @description:es Renombrar por lotes archivos de video y carpetas con códigos en PikPak.
+// @description:pt-BR Renomear em lote arquivos de vídeo e pastas com códigos no PikPak.
+// @description:fr Renommer par lots les fichiers vidéo et dossiers avec des codes dans PikPak.
 // @description:de Batch-Umbenennung von Videodateien und Ordnern mit JAV-Codes in PikPak.
 // @author       cheerchen37
 // @match        *://*mypikpak.com/*
@@ -759,10 +759,6 @@
                                                 <option value="asc">${t('asc')}</option>
                                                 <option value="desc">${t('desc')}</option>
                                             </select>
-                                            <button onClick=${validateFiles} disabled=${validating || selected.size === 0}
-                                                style="padding:8px 16px;border:none;border-radius:4px;cursor:pointer;background:${validating || selected.size === 0 ? '#c0c4cc' : colors.blue};color:#fff">
-                                                ${validating ? t('scanning') : selected.size === 0 ? t('selectFiles') : t('scanCodes')}
-                                            </button>
                                             <button onClick=${() => setShowConfig(!showConfig)}
                                                 style="padding:8px 12px;background:${showConfig ? '#e9ecef' : 'transparent'};border:1px solid #dcdfe6;border-radius:4px;cursor:pointer;font-size:13px"
                                                 >${t('config')}</button>
@@ -781,6 +777,9 @@
                         ${renaming && html`<div style="flex:1;color:${colors.secondary}">${t('progress')(progress.cur, progress.total)}</div>`}
                         ${!results && !confirm && [
                 html`<button onClick=${reset} style="padding:8px 16px;border:1px solid #dcdfe6;border-radius:4px;cursor:pointer;background:#fff">${t('cancel')}</button>`,
+                html`<button onClick=${validateFiles} disabled=${validating || selected.size === 0}
+                                style="padding:8px 16px;border:1px solid ${validating || selected.size === 0 ? '#dcdfe6' : colors.blue};border-radius:4px;cursor:pointer;background:${validating || selected.size === 0 ? '#f5f7fa' : '#fff'};color:${validating || selected.size === 0 ? '#c0c4cc' : colors.blue}">
+                                ${validating ? t('scanning') : t('scanCodes')}</button>`,
                 html`<button onClick=${() => setConfirm(true)} disabled=${validCount === 0}
                                 style="padding:8px 16px;border:none;border-radius:4px;cursor:pointer;background:${validCount === 0 ? '#c0c4cc' : colors.blue};color:#fff">${t('next')}</button>`
             ]}
