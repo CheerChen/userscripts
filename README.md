@@ -20,7 +20,7 @@ Push files and folders from PikPak to Aria2 for downloading.
 | RecoRu Work Clock | Show scheduled end time, working/labor time, and an analog clock on RecoRu. Auto-select workplace when accessed from office IPs. | RecoRu | [Install](https://raw.githubusercontent.com/CheerChen/userscripts/master/recoru-work-clock.user.js) |
 | AWS - Default Page Redirector | Redirect AWS service dashboards to your preferred default page. | AWS Console | [Install](https://raw.githubusercontent.com/CheerChen/userscripts/master/aws-default-page.user.js) |
 | Confluence Jira Title Copy | Copy page title and link, or copy as filename. | Confluence / Jira | [Install](https://raw.githubusercontent.com/CheerChen/userscripts/master/confluence-jira-title-copy.user.js) |
-| Manebi Learning Unblocker | Remove video playback restrictions on manebi-learning.com. | Manebi Learning | [Install](https://raw.githubusercontent.com/CheerChen/userscripts/master/manebi-learning-unblocker.user.js) |
+| Manebi Learning Helper | Remove video playback restrictions and automatically browse unfinished PDF lessons on manebi-learning.com. | Manebi Learning | [Install](https://raw.githubusercontent.com/CheerChen/userscripts/master/manebi-learning-helper.user.js) |
 | Zoom Recording CC Extractor | Extract closed captions (VTT) from Zoom cloud recording playback pages. | Zoom Recording | [Install](https://raw.githubusercontent.com/CheerChen/userscripts/master/zoom-recording-cc-extractor.user.js) |
 
 ### Personal

@@ -1,0 +1,10 @@
+{
+  "name": "userscripts-smoke-tests",
+  "private": true,
+  "scripts": {
+    "test": "node manebi-one-click.smoke.cjs && node manebi-controller-switch.smoke.cjs && node manebi-pause-resume.smoke.cjs && node manebi-i18n.smoke.cjs"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
+  }
+}

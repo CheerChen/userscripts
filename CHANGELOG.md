@@ -89,6 +89,30 @@
 
 ---
 
+## Manebi Learning Helper
+
+### v1.1.7 (2026-07-24)
+- Rename the script and file from Manebi Learning Unblocker to Manebi Learning Helper
+- Update localized names, UserScript metadata, console log prefixes, and README entry
+- Add one-click automatic browsing for unfinished PDF lessons
+- Skip completed lessons, browse every PDF page, wait for the completion mark, and continue to the next unfinished PDF
+- Resume PDF automation after full-page lesson navigation
+- Replace PDF Stop with Pause, preserve progress in session storage, and resume from the next unvisited page
+- Start video playback automatically when Skip to End is used on a paused video
+- Detect PDF and video content during SPA navigation, keep both controllers mutually exclusive, and rebind replaced video nodes
+- Support course URLs without `lessonId`, paused Video.js players, and delayed video content in accessible same-origin iframes
+- Match PDF Auto styling and drag behavior to Speed Control
+- Localize controller labels, PDF progress, and error messages in Chinese, Japanese, and English; use English for other browser languages
+- Remove unused commented-out anti-reset implementations
+
+### v1.0.0 (2026-03-24)
+- Initial release
+- Prevent background-tab and page-focus detection
+- Enable native video controls, playback speed adjustment, and seek shortcuts
+- Handle videos loaded dynamically
+
+---
+
 ## Zoom Recording CC Extractor
 
 ### v1.0 (2026-06-09)
