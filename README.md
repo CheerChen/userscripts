@@ -32,6 +32,7 @@ Push files and folders from PikPak to Aria2 for downloading.
 | Emby Show Fields Persistence Fix | Prevent Emby from resetting show fields when switching views. | Emby | [Install](https://raw.githubusercontent.com/CheerChen/userscripts/master/emby-fields-persistence-fix.user.js) |
 | ChatGPT Conversation Depth | Show conversation depth badges in the ChatGPT sidebar. | ChatGPT | [Install](https://raw.githubusercontent.com/CheerChen/userscripts/master/chatgpt-conversation-depth.user.js) |
 | Line Sticker Downloader | Download stickers from LINE Store pages. | LINE Store | [Install](https://raw.githubusercontent.com/CheerChen/userscripts/master/line-sticker-downloader.user.js) |
+| Tripo3D Model Downloader (Lite) | Passively capture and download model (GLB/GLTF) URLs on Tripo3D Studio. | Tripo3D Studio | [Install](https://raw.githubusercontent.com/CheerChen/userscripts/master/tripo3d-model-downloader-lite.user.js) |
 
 ## Installation
 

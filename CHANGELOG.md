@@ -1,5 +1,16 @@
 # Changelog
 
+## Tripo3D Model Downloader (Lite)
+
+### v1.0.0 (2026-08-30)
+- Initial release
+- Passively capture model (GLB/GLTF) download URLs on Tripo3D Studio via fetch hook + PerformanceObserver
+- Prefer PBR model URL when available; fall back to plain GLB / base model
+- One-click download button with Shadow DOM UI, multi-URL dropdown when several models are captured
+- 4-locale UserScript metadata (en/ja/zh-CN)
+
+---
+
 ## Emby Show Fields Persistence Fix
 
 ### v1.3.0 (2026-04-03)
