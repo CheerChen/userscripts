@@ -22,6 +22,7 @@ Push files and folders from PikPak to Aria2 for downloading.
 | Confluence Jira Title Copy | Copy page title and link, or copy as filename. | Confluence / Jira | [Install](https://raw.githubusercontent.com/CheerChen/userscripts/master/confluence-jira-title-copy.user.js) |
 | Manebi Learning Helper | Remove video playback restrictions and automatically browse unfinished PDF lessons on manebi-learning.com. | Manebi Learning | [Install](https://raw.githubusercontent.com/CheerChen/userscripts/master/manebi-learning-helper.user.js) |
 | Zoom Recording CC Extractor | Extract closed captions (VTT) from Zoom cloud recording playback pages. | Zoom Recording | [Install](https://raw.githubusercontent.com/CheerChen/userscripts/master/zoom-recording-cc-extractor.user.js) |
+| Teams Transcript Extractor | Extract the full meeting transcript from a Teams recording's Stream page via its own transcript API, even when downloads are blocked. Also works inside the Teams recap panel. | SharePoint Stream | [Install](https://raw.githubusercontent.com/CheerChen/userscripts/master/teams-transcript-extractor.user.js) |
 
 ### Personal
 

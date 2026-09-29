@@ -1,5 +1,34 @@
 # Changelog
 
+## Teams Transcript Extractor
+
+### v1.1.2 (2026-09-29)
+- Trigger button now clones the native primary ("Share") button item and is repainted Fluent orange `#d83b01` with white text — more visible next to the purple Share button
+
+### v1.1.1 (2026-09-29)
+- Trigger button clones a native `ms-OverflowSet-item` instead of hand-styling, inheriting the generated Fluent classes (font, height, hover) — fixes the button looking off
+- Result UI rebuilt as a Fluent-style centered dialog (overlay + white card + Segoe UI) instead of the dark right-anchored panel
+
+### v1.1.0 (2026-09-29)
+- Trigger moved into the SharePoint command bar, injected before the Teams/Share button group; zh/ja/en label
+- Floating-button fallback when no command bar exists (e.g. inside the recap OOPIF)
+
+### v1.0.2 (2026-09-29)
+- Fix: also match `_layouts/15` under site-collection path prefixes — OneDrive recording pages live at `<tenant>-my.sharepoint.com/personal/<user>/_layouts/15/stream.aspx`
+- Add `streamembed.aspx` (the recap player OOPIF) to the matches
+
+### v1.0.1 (2026-09-29)
+- Match `/_layouts/15/` path on any host instead of `*.sharepoint.com` — the recap iframe may load from `teams.cloud.microsoft`; the Teams top page itself cannot be used (iframe src unset, contentWindow cross-origin)
+
+### v1.0.0 (2026-09-29)
+- Initial release — userscript port of the `teams-transcript-extract` agent skill
+- Pull the full transcript from the page's own OneDrive v2.1 transcript API (two same-origin fetches, exact offsets, speaker ids, room attribution, system events); works even when the recording download button is blocked
+- Fallback: scroll-harvest the virtualized transcript list when the API fails (ja/zh/en aria-label time parsing)
+- Floating result panel: Copy TXT / Download TXT / Download JSON (JSON includes identityHints for mapping anonymized speakers)
+- 6-locale UserScript metadata
+
+---
+
 ## Tripo3D Model Downloader (Lite)
 
 ### v1.0.0 (2026-08-30)

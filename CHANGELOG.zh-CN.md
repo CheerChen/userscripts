@@ -1,5 +1,34 @@
 # 更新日志
 
+## Teams 会议转录提取器
+
+### v1.1.2 (2026-09-29)
+- 触发按钮改为克隆原生 primary（共享）按钮项并重绘为 Fluent 橙 `#d83b01` 白字——在紫色共享按钮旁更醒目
+
+### v1.1.1 (2026-09-29)
+- 触发按钮改为克隆原生 `ms-OverflowSet-item` 而非手写样式，继承 Fluent 生成类（字体、高度、hover）——修复按钮样式不协调
+- 结果界面重做为 Fluent 风格居中对话框（遮罩 + 白卡 + Segoe UI），替代原先右贴的深色面板
+
+### v1.1.0 (2026-09-29)
+- 触发入口移入 SharePoint 命令栏，注入到 Teams/共享 按钮组之前；按钮标签中/日/英
+- 无命令栏时（如 recap OOPIF 内）退化为浮动按钮
+
+### v1.0.2 (2026-09-29)
+- 修复：同时匹配站点集路径前缀下的 `_layouts/15`——OneDrive 录像页位于 `<tenant>-my.sharepoint.com/personal/<user>/_layouts/15/stream.aspx`
+- match 增加 `streamembed.aspx`（recap 播放器 OOPIF）
+
+### v1.0.1 (2026-09-29)
+- match 改为任意 host 下的 `/_layouts/15/` 路径，不再限于 `*.sharepoint.com`——recap iframe 可能从 `teams.cloud.microsoft` 加载；Teams 顶层页不可用（iframe src 为空、contentWindow 跨域）
+
+### v1.0.0 (2026-09-29)
+- 首次发布 — 由 `teams-transcript-extract` agent skill 移植为 userscript
+- 通过页面自身的 OneDrive v2.1 转录 API 提取完整转录（两次同域请求，精确时间偏移、speaker id、会议室归属、系统事件）；录像下载按钮被禁用时仍可用
+- 兜底：API 失败时滚动采集虚拟化转录列表（aria-label 时间解析支持日/中/英）
+- 浮动结果面板：复制 TXT / 下载 TXT / 下载 JSON（JSON 含 identityHints，用于映射匿名发言者）
+- 6 语言 UserScript 元数据
+
+---
+
 ## Emby 显示字段持久化修复
 
 ### v1.3.0 (2026-04-03)
