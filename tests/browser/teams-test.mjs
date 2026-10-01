@@ -1,12 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
-import { control, root } from "./scriptcat.mjs";
+import { control, root } from "../../tools/scriptcat.mjs";
 import { egoRun, installed } from "./ego-test.mjs";
 
 const space = Number(process.argv[2]);
 if (!Number.isInteger(space) || space < 1)
-  throw new Error("Usage: npm --prefix dev run test:teams -- <ego-space-id>");
+  throw new Error("Usage: npm run test:teams -- <ego-space-id>");
 const source = await readFile(
   resolve(root, "teams-transcript-extractor.user.js"),
   "utf8",

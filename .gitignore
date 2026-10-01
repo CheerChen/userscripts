@@ -37,5 +37,6 @@ go.work.sum
 # Test files with sensitive content
 test-cases.json
 # Generated browser-test userscripts (no credentials or real meeting data).
+tests/browser/.generated/
+# Old generated artifacts may remain locally after the directory migration.
 dev/.generated/
-dev/node_modules/

@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Userscripts ScriptCat Automation Fixture
-// @namespace    https://github.com/CheerChen/userscripts/dev
+// @namespace    https://github.com/CheerChen/userscripts/tests/browser
 // @version      1.0.0
 // @match        http://127.0.0.1:8642/__fixture*
 // @match        http://localhost:8642/__fixture*

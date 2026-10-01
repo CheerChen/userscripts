@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { control, root } from "./scriptcat.mjs";
+import { control, root } from "../../tools/scriptcat.mjs";
 
 // Use Ego's authenticated browser, not a separately launched Playwright profile.
 export function egoRun(fn, data) {
@@ -189,20 +189,20 @@ async function verify({ space, label, revision, create }) {
 async function main() {
   const space = Number(process.argv[2]);
   if (!Number.isInteger(space) || space < 1)
-    throw new Error("Usage: npm --prefix dev run test:ego -- <ego-space-id>");
+    throw new Error("Usage: npm run test:ego -- <ego-space-id>");
   let fixturePage;
-  const file = "dev/.generated/live.user.js";
+  const file = "tests/browser/.generated/live.user.js";
   try {
     if (!(await control("status")).connected)
       throw new Error("ScriptCat WebSocket is not connected");
     const template = (
-      await readFile(resolve(root, "dev/fixtures/automation.user.js"), "utf8")
+      await readFile(resolve(root, "tests/browser/fixtures/automation.user.js"), "utf8")
     ).replace(
       "Userscripts ScriptCat Automation Fixture",
       "Userscripts ScriptCat Watched E2E Fixture",
     );
     const name = "Userscripts ScriptCat Watched E2E Fixture";
-    await mkdir(resolve(root, "dev/.generated"), { recursive: true });
+    await mkdir(resolve(root, "tests/browser/.generated"), { recursive: true });
     await writeFile(resolve(root, file), template);
     await control("sync", { file, watch: true });
     const { createHash } = await import("node:crypto");

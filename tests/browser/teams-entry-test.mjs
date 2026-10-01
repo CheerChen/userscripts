@@ -2,12 +2,12 @@ import { readFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
-import { control, root } from "./scriptcat.mjs";
+import { control, root } from "../../tools/scriptcat.mjs";
 import { egoRun, installed } from "./ego-test.mjs";
 
 const space = Number(process.argv[2]);
 if (!Number.isInteger(space) || space < 1)
-  throw new Error("Usage: npm --prefix dev run test:teams:entries -- <ego-space-id>");
+  throw new Error("Usage: npm run test:teams:entries -- <ego-space-id>");
 const source = await readFile(resolve(root, "teams-transcript-extractor.user.js"), "utf8");
 await control("sync", {file: "teams-transcript-extractor.user.js", watch: true});
 const loaded = await egoRun(installed, {space, name: "Teams 会议转录提取器", version: source.match(/^\/\/\s*@version\s+(\S+)/m)[1]});
@@ -61,7 +61,7 @@ const result = await egoRun(async ({space, downloadDir}) => {
   if (!second) throw new Error('Need a second meeting to check selection isolation');
   await page.click(`loc=css:[data-entry-test-index="${second.index}"] [data-teams-transcript-trigger="list"]`);
   const other = await checkModal(second.title);
-  await page.click(`loc=css:[data-entry-test-index="${target.index}"] button >> nth=3`);
+  await page.click(`loc=css:[data-entry-test-index="${target.index}"] [data-tid="podcast-view-recap-button"]`);
   await page.waitForSelector('[data-teams-transcript-trigger="detail"]');
   const placement=await page.evaluate(()=>{
     const button=document.querySelector('[data-teams-transcript-trigger="detail"]');

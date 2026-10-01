@@ -1,0 +1,17 @@
+{
+  "name": "userscripts-tooling",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "node tools/scriptcat.mjs serve",
+    "status": "node tools/scriptcat.mjs status",
+    "sync": "node tools/scriptcat.mjs sync",
+    "test:ego": "node tests/browser/ego-test.mjs",
+    "test:teams": "node tests/browser/teams-test.mjs",
+    "test:teams:entries": "node tests/browser/teams-entry-test.mjs",
+    "test:smoke": "npm --prefix tests test"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  }
+}

@@ -257,7 +257,7 @@ if (
       console.log(JSON.stringify(await control("unwatch", { file }), null, 2));
     else
       throw new Error(
-        "Usage: node dev/scriptcat.mjs serve|status|sync <file.user.js> [--watch]|unwatch <file.user.js>",
+        "Usage: node tools/scriptcat.mjs serve|status|sync <file.user.js> [--watch]|unwatch <file.user.js>",
       );
   } catch (error) {
     console.error(error.message);
