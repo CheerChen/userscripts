@@ -50,6 +50,10 @@ npm run test:teams:entries -- <ego-space-id>
 # Legacy SharePoint transcript iframe in the current Teams recap.
 npm run test:teams -- <ego-space-id>
 
+# Another production userscript: real Jira/linked Confluence clipboard checks,
+# plus synthetic SPA, remount, same-origin/srcdoc and cross-site iframe cases.
+npm run test:atlassian -- <ego-space-id>
+
 node tools/scriptcat.mjs unwatch teams-transcript-extractor.user.js
 ```
 
@@ -81,6 +85,23 @@ after the entry test, or open a recording recap first. Results report counts
 and status, not meeting content. Tests do not finish the task space themselves;
 the calling agent must hand it back according to Ego's skill when done.
 
+The Atlassian regression installs and hashes the actual title-copy userscript,
+copies from the authenticated Jira issue, follows a different read-only issue
+link, and tests a linked Confluence page when one is available. It restores the
+original Jira URL afterward and never edits business content. It also installs
+a generated copy of the same source (only fixture metadata differs) through
+ScriptCat for public-data SPA, remount, nested frame, srcdoc, and cross-site
+tests. These synthetic cases supplement rather than replace authenticated tests.
+
+Clipboard tests currently require macOS. `clipboard-guard.mjs` snapshots each
+native pasteboard item's typed data in memory using
+[NSPasteboardItem](https://developer.apple.com/documentation/appkit/nspasteboarditem),
+and restores it when the child test succeeds or fails. A fresh sentinel prevents
+stale clipboard content from passing. The target page must be brought to the
+foreground before activating Copy: checking ScriptCat's editor can leave the
+options tab active, and the Clipboard API requires the target document to have
+focus. No clipboard contents or internal page identities are printed or saved.
+
 Existing Manebi smoke tests can be run separately:
 
 ```sh
@@ -100,6 +121,8 @@ SPA transitions, permissions, frames, and download checks where relevant.
   existing port is occupied. Check the optional service logs on macOS.
 - **Sync succeeded but behavior is stale:** compare installed source first,
   then reload the actual document that owns the script, including the iframe.
+  For same-URL reloads, wait for `performance.timeOrigin` to change before
+  accepting selectors that could still belong to the old document.
 - **Source verification fails:** ScriptCat 1.4 does not expose `window.monaco`;
   the test reads the editor's React `code` prop. Future editor versions may
   require updating this diagnostic, not bypassing the manager's installation.

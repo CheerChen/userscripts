@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { dirname, resolve, relative, isAbsolute } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { WebSocketServer, WebSocket } from "ws";
+import { atlassianFixture } from "../tests/browser/fixtures/atlassian.mjs";
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const stateDir = resolve(
@@ -119,6 +120,11 @@ async function serve() {
   const server = http.createServer(async (request, response) => {
     try {
       const url = new URL(request.url, `http://127.0.0.1:${port}`);
+      if (url.pathname.startsWith("/__fixture/atlassian/")) {
+        response.writeHead(200, { "content-type": "text/html", "cache-control": "no-store" });
+        response.end(atlassianFixture(url));
+        return;
+      }
       if (url.pathname === "/__fixture/data")
         return json(response, 200, { fixture: "gm-request-ok" });
       if (url.pathname === "/__fixture") {

@@ -8,7 +8,7 @@
 // @description:ja ボタンをクリックして、タイトルテキスト+リンクをマークダウン形式でコピーし、ファイル名としてコピーします。
 // @description:zh-CN 点击按钮以markdown格式复制标题文本+链接，以及复制为文件名
 // @namespace    https://github.com/CheerChen
-// @version      0.8.2
+// @version      0.9.0
 // @author      cheerchen37
 // @license     MIT
 // @match        *://*.atlassian.net/*
@@ -21,505 +21,191 @@
 
 (function () {
     'use strict';
-
-    // Initialize script
-    function initScript() {
-        // Add button styles
-        const style = document.createElement('style');
-        style.type = 'text/css';
-        style.innerHTML = `
-            .custom-copy-button {
-                display: inline-flex;
-                align-items: center;
-                margin-left: 10px;
-                padding: 6px 12px;
-                background-color: #0052CC;
-                color: white;
-                border: none;
-                border-radius: 3px;
-                cursor: pointer;
-                font-size: 12px;
-                vertical-align: middle;
-            }
-            .custom-copy-button:hover {
-                background-color: #003380;
-            }
-            #copyFeedback {
-                position: absolute;
-                margin-top: 5px;
-                background-color: #000;
-                color: #fff;
-                padding: 5px 10px;
-                border-radius: 5px;
-                display: none;
-                z-index: 1001;
-            }
-        `;
-        document.head.appendChild(style);
-
-        // Initial check for buttons
-        addButtons();
-
-        // Set up a timer to check for the elements periodically
-        setInterval(addButtons, 2000);
+    // The top document owns readable same-origin frames, including about:blank.
+    // Cross-origin Atlassian frames run their own matched userscript.
+    try {
+        if (window.parent !== window && window.parent.location.origin === location.origin) return;
+    } catch { /* This cross-origin child owns its own entry point. */ }
+    const JIRA_TITLE = ['h1[data-testid="issue.views.issue-base.foundation.summary.heading"]',
+        '#summary-val', 'h1[data-test-id="issue-title"]', '.issue-header h1',
+        '.jira-issue-header h1', '.ghx-detail-title h1', '.ghx-detail-title'];
+    const WIKI_TITLE = ['#title-text', '[data-testid="page-title"]',
+        '[data-test-id="content-title"]', '[data-testid="title-text"]', 'h1.PageTitle',
+        '.confluence-page-title', '.aui-page-header-main h1',
+        '#content-header-container h1', '#main-content h1', 'h1.pagetitle'];
+    const visible = node => {
+        if (!node?.isConnected || !node.getClientRects().length || node.closest('[inert], [aria-hidden="true"]')) return false;
+        const style = node.ownerDocument.defaultView.getComputedStyle(node);
+        return style.display !== 'none' && style.visibility !== 'hidden';
+    };
+    const text = node => node?.textContent.trim().replace(/\s+/g, ' ') || '';
+    function issueKey(url) {
+        for (const name of ['selectedIssue', 'issueKey', 'modal']) {
+            const value = url.searchParams.get(name);
+            if (/^[A-Z][A-Z0-9]*-\d+$/i.test(value || '')) return value.toUpperCase();
+        }
+        return url.pathname.match(/\/browse\/([A-Z][A-Z0-9]*-\d+)/i)?.[1].toUpperCase() || '';
     }
-
-    // Get Confluence page title
-    function getConfluenceTitle() {
-        const selectors = [
-            '#title-text',
-            'h1.css-1xrg2ua',
-            'h1[data-test-id="content-title"]',
-            'h1.PageTitle',
-            '.confluence-page-title',
-            '.aui-page-header-main h1',
-            '#content-header-container h1',
-            // Additional Confluence selectors
-            '.css-1mpsox7 h1', // New Confluence cloud
-            '#main-content h1:first-child',
-            '.wiki-content .confluenceTitle',
-            'h1.pagetitle'
-        ];
-
-        for (const selector of selectors) {
-            const element = document.querySelector(selector);
-            if (element && element.textContent.trim()) {
-                return element.textContent.trim();
+    function documents() {
+        const result = [];
+        function visit(doc, parentUrl, depth) {
+            if (depth > 8 || result.some(entry => entry.doc === doc)) return;
+            let url;
+            const inherited = /^about:(blank|srcdoc)$/.test(doc.URL);
+            try { url = new URL(inherited ? parentUrl : doc.URL); }
+            catch { return; }
+            result.push({doc, url, inherited});
+            for (const frame of doc.querySelectorAll('iframe')) {
+                if (!visible(frame)) continue;
+                try { if (frame.contentDocument) visit(frame.contentDocument, url.href, depth + 1); }
+                catch { /* Matched child script owns cross-origin content. */ }
             }
         }
-
-        return document.title.split(' - ')[0].trim();
+        visit(document, location.href, 0);
+        return result;
     }
-
-    // Get Jira page title
-    function getJiraTitle() {
-        const mainSelector = 'h1[data-testid="issue.views.issue-base.foundation.summary.heading"]';
-        const mainElement = document.querySelector(mainSelector);
-
-        if (mainElement && mainElement.textContent.trim()) {
-            return mainElement.textContent.trim();
+    function contextFor({doc, url, inherited}) {
+        const key = issueKey(url), wiki = /\/(wiki|confluence|display)(\/|$)/.test(url.pathname);
+        if (!key && !wiki) return null; // Never select an arbitrary board card.
+        let element;
+        for (const selector of wiki ? WIKI_TITLE : JIRA_TITLE) {
+            const candidates = [...doc.querySelectorAll(selector)].filter(node => visible(node) && text(node));
+            element = candidates.find(node => node.closest('[role="dialog"], [aria-modal="true"]')) || candidates[0];
+            if (element) break;
         }
-
-        const backupSelectors = [
-            'h1[data-test-id="issue-title"]',
-            'h1.issue-title',
-            'h1.ghx-summary',
-            '.issue-header h1',
-            '.jira-issue-header h1',
-            // Additional selectors for backlog view
-            '.ghx-issue-title',
-            '[data-testid="rapid-board-issue.ui.issue-card.title-container"]',
-            '[role="heading"][aria-level="3"]' // Often used in backlog
-        ];
-
-        for (const selector of backupSelectors) {
-            const elements = document.querySelectorAll(selector);
-            if (elements && elements.length > 0) {
-                // Return the one that's visible or the first one
-                for (const element of elements) {
-                    if (element && element.textContent.trim() && isElementVisible(element)) {
-                        return element.textContent.trim();
-                    }
-                }
-                // If no visible element found, return the first one
-                if (elements[0].textContent.trim()) {
-                    return elements[0].textContent.trim();
-                }
+        let title = text(element);
+        if (!title) {
+            if (inherited) return null; // Frame shells need a real visible title.
+            const dedicated = key || /\/(pages\/\d+|display\/[^/]+\/[^/]+|viewpage\.action)/.test(url.pathname);
+            if (!dedicated) return null;
+            title = doc.title.replace(/\s*[-|]\s*(JIRA|Confluence)\s*$/i, '').trim();
+            if (key && /^\[[A-Z][A-Z0-9]*-\d+\]/i.test(title) && !title.toUpperCase().startsWith('[' + key + ']')) return null;
+            if (key) title = title.replace(new RegExp('^\\[' + key + '\\]\\s*', 'i'), '');
+            if (!title || /^(Jira|Confluence|Atlassian|Loading[.…]*)$/i.test(title)) return null;
+        }
+        if (key) url = new URL('/browse/' + key, url.origin);
+        else {
+            const canonical = doc.querySelector('link[rel="canonical"]')?.href;
+            if (canonical) {
+                try {
+                    const candidate = new URL(canonical, url.href);
+                    if (candidate.origin === url.origin && /\/(wiki|confluence|display)\//.test(candidate.pathname)) url = candidate;
+                } catch { /* Preserve the current document URL. */ }
             }
+            url.hash = '';
+            for (const name of [...url.searchParams.keys()]) if (name !== 'pageId') url.searchParams.delete(name);
         }
-
-        return document.title.split(' - ')[0].trim();
+        return {title, key, url: url.href, element, doc};
     }
-
-    // Check if element is visible
-    function isElementVisible(element) {
-        return !!(element.offsetWidth || element.offsetHeight || element.getClientRects().length);
+    function currentContext() {
+        const contexts = documents().map(contextFor).filter(Boolean);
+        return contexts.find(context => context.element) || contexts[0] || null;
     }
-
-    // Get Jira ticket ID from URL or page
-    function getJiraTicketId() {
-        // 1. Try to extract ticket ID from URL parameters (backlog, modal, etc.)
-        const urlParams = new URLSearchParams(window.location.search);
-        for (const param of ['selectedIssue', 'modal', 'issueKey']) {
-            const value = urlParams.get(param);
-            if (value && /^[A-Z][A-Z0-9]+-\d+$/i.test(value)) {
-                return value;
-            }
-        }
-
-        // 2. Try to extract ticket ID from /browse/ URL
-        const urlMatch = window.location.href.match(/\/browse\/([A-Z][A-Z0-9]+-\d+)/i);
-        if (urlMatch && urlMatch[1]) {
-            return urlMatch[1];
-        }
-
-        // 3. Try to extract from DOM elements (list view, board, etc.)
-        const selectors = [
-            'a[data-testid*="issue-key"]',
-            'a[data-testid*="issuekey"]',
-            '[data-testid*="issue-key"] a[href*="/browse/"]'
-        ];
-
-        for (const selector of selectors) {
-            const element = document.querySelector(selector);
-            if (element) {
-                // Try text content first
-                const text = element.textContent.trim();
-                if (/^[A-Z][A-Z0-9]+-\d+$/i.test(text)) {
-                    return text;
-                }
-                // Try href attribute
-                const href = element.getAttribute('href');
-                if (href) {
-                    const hrefMatch = href.match(/\/browse\/([A-Z][A-Z0-9]+-\d+)/i);
-                    if (hrefMatch && hrefMatch[1]) {
-                        return hrefMatch[1];
-                    }
-                }
-            }
-        }
-
-        return '';
-    }
-
-    // Sanitize string for use as filename
-    function sanitizeFilename(input) {
-        return input.replace(/[\\/:*?"<>|[\]{}#%&+,;=@^`~]/g, '-')
-            .replace(/\s+/g, ' ')
-            .trim();
-    }
-
-    // Add copy buttons to page
-    function addButtons() {
-        // Check if we're in Jira
-        if (document.location.href.includes("/browse/") ||
-            document.location.href.includes("/jira/") ||
-            document.location.href.includes("/backlog")) {
-            addJiraButtons();
-        }
-        // Check if we're in Confluence
-        else if (document.location.href.includes("/wiki/") ||
-            document.location.href.includes("/confluence/") ||
-            document.location.href.includes("/display/")) {
-            addConfluenceButtons();
-        }
-    }
-
-    // Add buttons to Jira pages
-    function addJiraButtons() {
-        if (document.getElementById('customCopyButton')) {
-            return; // Buttons already exist
-        }
-
-        let titleElement = null;
-
-        // Try to find the title element using various selectors
-        const titleSelectors = [
-            'h1[data-testid="issue.views.issue-base.foundation.summary.heading"]',
-            '.issue-header h1',
-            '.jira-issue-header h1',
-            '.ghx-detail-title h1',
-            // For backlog view
-            '[data-testid="rapid-board-issue.ui.issue-card.title-container"]',
-            '.ghx-selected .ghx-summary'
-        ];
-
-        for (const selector of titleSelectors) {
-            const element = document.querySelector(selector);
-            if (element && isElementVisible(element)) {
-                titleElement = element;
-                break;
-            }
-        }
-
-        // If we found a title element, add buttons next to it
-        if (titleElement) {
-            insertButtonsNextToElement(titleElement);
-        } else {
-            // For backlog, try to add to a visible container
-            const backlogContainers = [
-                '[data-test-id="platform-board.ui.board.board-container"]',
-                '.ghx-detail-view',
-                '.ghx-detail-contents',
-                '[data-testid="software-board.board.board.container"]'
-            ];
-
-            for (const selector of backlogContainers) {
-                const container = document.querySelector(selector);
-                if (container && isElementVisible(container)) {
-                    // Create floating buttons for backlog
-                    insertFloatingButtons(container);
-                    break;
-                }
-            }
-        }
-    }
-
-    // Add buttons to Confluence pages
-    function addConfluenceButtons() {
-        if (document.getElementById('customCopyButton')) {
-            return; // Buttons already exist
-        }
-
-        let titleElement = null;
-
-        // Try to find the confluence title using various selectors
-        const titleSelectors = [
-            '#title-text',
-            'h1.css-1xrg2ua',
-            'h1[data-test-id="content-title"]',
-            'h1.PageTitle',
-            '.confluence-page-title',
-            '.aui-page-header-main h1',
-            '#content-header-container h1',
-            // Additional Confluence selectors
-            '.css-1mpsox7 h1',
-            '#main-content h1:first-child',
-            '.wiki-content .confluenceTitle',
-            'h1.pagetitle',
-            // Generic h1 as last resort
-            '#main-content h1'
-        ];
-
-        for (const selector of titleSelectors) {
-            const element = document.querySelector(selector);
-            if (element && isElementVisible(element)) {
-                titleElement = element;
-                break;
-            }
-        }
-
-        // If we found a title element, add buttons next to it
-        if (titleElement) {
-            insertButtonsNextToElement(titleElement);
-        } else {
-            // Try adding to a container
-            const containers = [
-                '#main-content',
-                '.confluence-information-macro-body',
-                '.wiki-content',
-                '.content-body',
-                '#content'
-            ];
-
-            for (const selector of containers) {
-                const container = document.querySelector(selector);
-                if (container && isElementVisible(container)) {
-                    insertFloatingButtons(container);
-                    break;
-                }
-            }
-        }
-    }
-
-    // Insert buttons next to an element
-    function insertButtonsNextToElement(element) {
-        // Create button container
-        const buttonContainer = document.createElement('div');
-        buttonContainer.style.display = 'inline-flex';
-        buttonContainer.style.alignItems = 'center';
-        buttonContainer.style.marginLeft = '10px';
-
-        // Create markdown button
+    const style = document.createElement('style');
+    style.textContent = [
+        '[data-title-copy-toolbar]{display:inline-flex;align-items:center;gap:6px;margin:8px 0;flex-wrap:wrap}',
+        '[data-title-copy-toolbar][data-placement="floating"]{position:fixed;right:20px;bottom:20px;z-index:2147483647;padding:8px;background:white;border-radius:6px;box-shadow:0 2px 12px #0003}',
+        '[data-title-copy-toolbar] button{font:12px/1.4 system-ui,sans-serif;padding:6px 10px;border:0;border-radius:4px;background:#0052cc;color:white;cursor:pointer}',
+        '[data-title-copy-toolbar] button:hover{background:#0747a6}',
+        '[data-title-copy-toolbar] button:focus-visible{outline:2px solid #4c9aff;outline-offset:2px}',
+        '[data-title-copy-toolbar] button:disabled{opacity:.55;cursor:default}',
+        '[data-title-copy-toolbar] [role="status"]{font:12px system-ui,sans-serif;color:#172b4d}',
+    ].join('\n');
+    (document.head || document.documentElement).append(style);
+    const bar = document.createElement('div');
+    bar.dataset.titleCopyToolbar = 'true';
+    bar.setAttribute('role', 'group');
+    bar.setAttribute('aria-label', 'Copy page title');
+    const feedback = document.createElement('span');
+    feedback.id = 'copyFeedback';
+    feedback.setAttribute('role', 'status');
+    let feedbackTimer, timer, anchor;
+    for (const [id, label, format] of [
+        ['customCopyButton', 'Copy Title & Link', 'markdown'],
+        ['customCopyFilenameButton', 'Copy as Filename', 'filename'],
+    ]) {
         const button = document.createElement('button');
-        button.id = 'customCopyButton';
-        button.className = 'custom-copy-button';
-        button.textContent = 'Copy Title & Link';
-        buttonContainer.appendChild(button);
-
-        // Create filename button
-        const filenameButton = document.createElement('button');
-        filenameButton.id = 'customCopyFilenameButton';
-        filenameButton.className = 'custom-copy-button';
-        filenameButton.style.marginLeft = '5px';
-        filenameButton.textContent = 'Copy as Filename';
-        buttonContainer.appendChild(filenameButton);
-
-        // Create feedback element
-        const feedback = document.createElement('div');
-        feedback.id = 'copyFeedback';
-        feedback.textContent = 'Copied!';
-        buttonContainer.appendChild(feedback);
-
-        // Insert container after the element
-        if (element.nextSibling) {
-            element.parentNode.insertBefore(buttonContainer, element.nextSibling);
-        } else {
-            element.parentNode.appendChild(buttonContainer);
+        button.id = id;
+        button.type = 'button';
+        button.textContent = label;
+        button.dataset.titleCopyFormat = format;
+        button.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation(); // Do not open Jira's inline title editor.
+            copy(format, button);
+        });
+        for (const event of ['pointerdown', 'mousedown', 'keydown']) {
+            button.addEventListener(event, event => event.stopPropagation());
         }
-
-        // Add event listeners
-        button.addEventListener('click', copyAsMarkdown);
-        filenameButton.addEventListener('click', copyAsFilename);
+        bar.append(button);
     }
-
-    // Insert floating buttons in a container
-    function insertFloatingButtons(container) {
-        // Create floating button container
-        const buttonContainer = document.createElement('div');
-        buttonContainer.style.position = 'absolute';
-        buttonContainer.style.top = '10px';
-        buttonContainer.style.right = '10px';
-        buttonContainer.style.zIndex = '1000';
-        buttonContainer.style.display = 'flex';
-
-        // Create markdown button
-        const button = document.createElement('button');
-        button.id = 'customCopyButton';
-        button.className = 'custom-copy-button';
-        button.textContent = 'Copy Title & Link';
-        buttonContainer.appendChild(button);
-
-        // Create filename button
-        const filenameButton = document.createElement('button');
-        filenameButton.id = 'customCopyFilenameButton';
-        filenameButton.className = 'custom-copy-button';
-        filenameButton.style.marginLeft = '5px';
-        filenameButton.textContent = 'Copy as Filename';
-        buttonContainer.appendChild(filenameButton);
-
-        // Create feedback element
-        const feedback = document.createElement('div');
-        feedback.id = 'copyFeedback';
-        feedback.textContent = 'Copied!';
-        feedback.style.position = 'absolute';
-        feedback.style.top = '40px';
-        feedback.style.right = '0';
-        buttonContainer.appendChild(feedback);
-
-        // Make sure container has position relative
-        const currentPosition = window.getComputedStyle(container).position;
-        if (currentPosition === 'static') {
-            container.style.position = 'relative';
-        }
-
-        // Add to container
-        container.appendChild(buttonContainer);
-
-        // Add event listeners
-        button.addEventListener('click', copyAsMarkdown);
-        filenameButton.addEventListener('click', copyAsFilename);
-    }
-
-    // Copy title and link as Markdown
-    function copyAsMarkdown() {
-        let titleText = '';
-        if (document.location.href.includes("wiki") || document.location.href.includes("confluence")) {
-            titleText = getConfluenceTitle();
-            console.log("Got Confluence title:", titleText);
-        } else {
-            titleText = getJiraTitle();
-            console.log("Got Jira title:", titleText);
-        }
-
-        if (!titleText) {
-            titleText = document.title;
-            console.log("Using document title:", titleText);
-        }
-
-        const pageLink = window.location.href;
-        const copyText = `[${titleText}](${pageLink})`;
-        console.log("Copying as Markdown:", copyText);
-
-        copyToClipboard(copyText);
-    }
-
-    // Copy as filename format
-    function copyAsFilename() {
-        let titleText = '';
-        let ticketId = '';
-
-        if (document.location.href.includes("wiki") || document.location.href.includes("confluence")) {
-            titleText = getConfluenceTitle();
-        } else {
-            titleText = getJiraTitle();
-            ticketId = getJiraTicketId();
-            console.log("Extracted ticket ID:", ticketId);
-        }
-
-        if (!titleText) {
-            titleText = document.title;
-        }
-
-        // Sanitize title to be safe for filenames
-        titleText = sanitizeFilename(titleText);
-
-        // Create filename format: {ticket-id} {title}
-        let filename = titleText;
-        if (ticketId) {
-            filename = `${ticketId} ${titleText}`;
-        }
-
-        console.log("Copying as filename:", filename);
-        copyToClipboard(filename);
-    }
-
-    // Copy text to clipboard
-    function copyToClipboard(text) {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(text).then(() => {
-                showFeedback();
-            }).catch(err => {
-                console.error("Clipboard API failed:", err);
-                copyWithFallback(text);
-            });
-        } else {
-            copyWithFallback(text);
-        }
-    }
-
-    // Fallback copy method
-    function copyWithFallback(text) {
-        const tempTextarea = document.createElement('textarea');
-        tempTextarea.style.position = 'fixed';
-        tempTextarea.style.top = '0';
-        tempTextarea.style.left = '0';
-        tempTextarea.style.width = '2em';
-        tempTextarea.style.height = '2em';
-        tempTextarea.style.opacity = '0';
-        document.body.appendChild(tempTextarea);
-        tempTextarea.value = text;
-        tempTextarea.select();
-
+    bar.append(feedback);
+    async function writeClipboard(value) {
         try {
-            const success = document.execCommand('copy');
-            if (success) {
-                showFeedback();
-            } else {
-                console.error("execCommand copy failed");
-            }
-        } catch (err) {
-            console.error('Copy error:', err);
-        }
-
-        document.body.removeChild(tempTextarea);
-    }
-
-    // Show copy success feedback
-    function showFeedback() {
-        const feedback = document.getElementById('copyFeedback');
-        if (feedback) {
-            feedback.style.display = 'block';
-            setTimeout(() => { feedback.style.display = 'none'; }, 2000);
+            if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+            await navigator.clipboard.writeText(value);
+            return;
+        } catch { /* Sandboxed frames may require the legacy copy path. */ }
+        const textarea = document.createElement('textarea'), focused = document.activeElement;
+        const selection = document.getSelection();
+        const ranges = selection ? Array.from({length: selection.rangeCount}, (_, i) => selection.getRangeAt(i).cloneRange()) : [];
+        textarea.value = value;
+        textarea.style.cssText = 'position:fixed;left:0;top:0;opacity:0;pointer-events:none';
+        document.body.append(textarea);
+        try {
+            textarea.select();
+            if (!document.execCommand('copy')) throw new Error('Clipboard permission denied');
+        } finally {
+            textarea.remove();
+            focused?.focus({preventScroll: true});
+            if (selection) { selection.removeAllRanges(); for (const range of ranges) selection.addRange(range); }
         }
     }
-
-    // Initialize on page load
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => setTimeout(initScript, 500));
-    } else {
-        setTimeout(initScript, 500);
+    async function copy(format, button) {
+        // Resolve at click time, never capture a previous SPA page's identity.
+        const context = currentContext();
+        if (!context) return showFeedback('Title not ready');
+        const value = format === 'filename'
+            ? (context.key ? context.key + ' ' : '') + context.title.replace(/[\\/:*?"<>|[\]{}#%&+,;=@^\x60~]/g, '-').replace(/\s+/g, ' ').trim()
+            : '[' + context.title.replace(/\\/g, '\\\\').replace(/\[/g, '\\[').replace(/\]/g, '\\]') + '](' + context.url.replace(/\(/g, '%28').replace(/\)/g, '%29') + ')';
+        button.disabled = true;
+        try { await writeClipboard(value); showFeedback('Copied!'); }
+        catch { showFeedback('Copy failed — check clipboard permission'); }
+        finally { button.disabled = false; }
     }
-
-    // Watch for DOM changes
-    const observer = new MutationObserver(function (mutations) {
-        if (!document.getElementById('customCopyButton')) {
-            addButtons();
+    function showFeedback(message) {
+        clearTimeout(feedbackTimer);
+        feedback.textContent = message;
+        feedbackTimer = setTimeout(() => { feedback.textContent = ''; }, 2000);
+    }
+    const observed = new WeakSet();
+    function reconcile() {
+        for (const {doc} of documents()) {
+            if (observed.has(doc)) continue;
+            observed.add(doc);
+            new MutationObserver(schedule).observe(doc.documentElement, {childList: true, subtree: true, characterData: true});
+            doc.addEventListener('load', schedule, true);
         }
-    });
-
-    // Start observing after initialization
-    setTimeout(() => {
-        observer.observe(document.body, { childList: true, subtree: true });
-    }, 1000);
+        const context = currentContext();
+        if (!context || !document.body) { bar.remove(); anchor = null; return; }
+        const nextAnchor = context.doc === document && context.element
+            ? context.element.closest('[data-testid="issue-field-summary.ui.issue-field-summary-inline-edit--container"]') || context.element.closest('form') || context.element
+            : null;
+        const placement = nextAnchor ? 'inline' : 'floating';
+        if (!bar.isConnected || anchor !== nextAnchor || bar.dataset.placement !== placement) {
+            bar.dataset.placement = placement;
+            if (nextAnchor) nextAnchor.after(bar); else document.body.append(bar);
+            anchor = nextAnchor;
+        }
+    }
+    function schedule() {
+        if (timer) return;
+        timer = setTimeout(() => { timer = null; reconcile(); }, 100);
+    }
+    window.addEventListener('popstate', schedule);
+    window.addEventListener('hashchange', schedule);
+    // Cover pushState without replacing Atlassian's own history methods.
+    let lastUrl = location.href;
+    setInterval(() => { if (location.href !== lastUrl) { lastUrl = location.href; schedule(); } }, 500);
+    reconcile();
 })();

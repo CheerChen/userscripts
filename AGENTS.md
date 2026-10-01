@@ -33,6 +33,9 @@
 - `npm run test:teams:entries -- <space-id>`: Teams recap list, meeting selection,
   detail toolbar, and actual TXT/JSON downloads (Chinese Teams UI).
 - `npm run test:teams -- <space-id>`: existing Teams recap transcript iframe.
+- `npm run test:atlassian -- <space-id>`: real Jira title/link clipboard and
+  navigation, linked Confluence page when available, and synthetic SPA/iframe
+  regressions. Requires macOS; restores native clipboard formats in memory.
 - `npm --prefix tests ci` then `npm run test:smoke`: existing Manebi smoke tests.
   These do not replace browser tests for other scripts.
 - Keep runnable bridge utilities in `tools/`, browser tests and fixtures in

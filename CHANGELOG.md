@@ -1,5 +1,15 @@
 # Changelog
 
+## Confluence Jira Title Copy
+
+### v0.9.0 (2026-10-01)
+- Resolve the current visible title and canonical page/issue URL at copy time; escape Markdown brackets and preserve the filename shortcut.
+- Remount after SPA title/header replacement, handle readable same-origin/srcdoc frames, and keep matched cross-origin Atlassian frames independent.
+- Keep entry buttons outside Jira's inline title editor; use a floating entry when the title lives in a readable frame or no inline anchor is available.
+- Remove title/link console logging and add real ScriptCat/Ego clipboard, navigation, and synthetic iframe regression tests.
+
+---
+
 ## Teams Transcript Extractor
 
 ### v1.2.0 (2026-10-01)

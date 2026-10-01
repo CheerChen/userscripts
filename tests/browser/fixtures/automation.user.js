@@ -14,6 +14,8 @@
 (function () {
   "use strict";
   const version = "v1";
+  const mount = document.getElementById("fixture");
+  if (!mount) return; // Do not execute in another feature's nested fixtures.
   GM_setValue("automation-version", version);
   const button = document.createElement("button");
   button.id = "automation-export";
@@ -24,7 +26,7 @@
     dialog.textContent = "Export modal " + GM_getValue("automation-version");
     document.body.append(dialog);
   };
-  document.getElementById("fixture").append(button);
+  mount.append(button);
   GM_xmlhttpRequest({
     method: "GET",
     url: "http://127.0.0.1:8642/__fixture/data",
