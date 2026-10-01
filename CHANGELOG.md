@@ -2,6 +2,12 @@
 
 ## Teams Transcript Extractor
 
+### v1.2.0 (2026-10-01)
+- Export directly from each Teams meeting recap list item, without opening the recording.
+- Add an export button beside Share / Watch in browser in the Teams recap toolbar.
+- Pin requests to the selected meeting's transcript ID; use authenticated GM requests across SharePoint origins and DOM-created SVG for Teams Trusted Types.
+- Add real ScriptCat/Ego regression tests for both entry points and selection isolation.
+
 ### v1.1.2 (2026-09-29)
 - Trigger button now clones the native primary ("Share") button item and is repainted Fluent orange `#d83b01` with white text — more visible next to the purple Share button
 

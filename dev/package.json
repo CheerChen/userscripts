@@ -1,0 +1,16 @@
+{
+  "name": "userscripts-scriptcat-dev",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "node scriptcat.mjs serve",
+    "status": "node scriptcat.mjs status",
+    "sync": "node scriptcat.mjs sync",
+    "test:ego": "node ego-test.mjs",
+    "test:teams": "node teams-test.mjs",
+    "test:teams:entries": "node teams-entry-test.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  }
+}

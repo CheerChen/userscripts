@@ -6,11 +6,11 @@
 // @name:zh-TW   Teams 會議轉錄提取器
 // @name:ko      Teams 회의 대화록 추출기
 // @namespace    https://github.com/CheerChen
-// @version      1.1.2
-// @description  Extract the full meeting transcript from a Teams recording's SharePoint Stream page via the page's own OneDrive transcript API. Works even when the download button is blocked.
-// @description:en  Extract the full meeting transcript from a Teams recording's SharePoint Stream page via the page's own OneDrive transcript API. Works even when the download button is blocked.
+// @version      1.2.0
+// @description  Export full transcripts from the Teams recap list, recap toolbar, and SharePoint Stream using the meeting's OneDrive transcript API.
+// @description:en  Export full transcripts from the Teams recap list, recap toolbar, and SharePoint Stream using the meeting's OneDrive transcript API.
 // @description:ja  Teams録画のSharePoint Streamページから、ページ自身のOneDrive文字起こしAPI経由で全文を抽出します。ダウンロードボタンがブロックされていても動作します。
-// @description:zh-CN  通过页面自身的 OneDrive 转录 API，从 Teams 录像的 SharePoint Stream 页面提取完整会议转录。即使下载按钮被禁用也可用。
+// @description:zh-CN  从 Teams 会议回顾列表、详情工具栏或 SharePoint Stream 导出完整会议转录，无需打开专用录像链接。
 // @description:zh-TW  透過頁面自身的 OneDrive 轉錄 API，從 Teams 錄影的 SharePoint Stream 頁面提取完整會議轉錄。即使下載按鈕被停用也可用。
 // @description:ko  페이지 자체의 OneDrive 대화록 API를 통해 Teams 녹화의 SharePoint Stream 페이지에서 전체 회의 대화록을 추출합니다. 다운로드 버튼이 차단되어 있어도 작동합니다.
 // @author       cheerchen37
@@ -20,7 +20,11 @@
 // @match        *://*/*/_layouts/15/streamembed.aspx*
 // @match        *://*/_layouts/15/xplatplugins.aspx*
 // @match        *://*/*/_layouts/15/xplatplugins.aspx*
+// @match        https://teams.cloud.microsoft/*
+// @match        https://teams.microsoft.com/*
 // @grant        unsafeWindow
+// @grant        GM_xmlhttpRequest
+// @connect      sharepoint.com
 // @run-at       document-idle
 // @icon         https://www.google.com/s2/favicons?domain=teams.microsoft.com
 // @license      MIT
@@ -35,6 +39,7 @@
 // /personal/<user>/ prefix, and the Teams top page cannot read the iframe URL
 // (src attr unset, contentWindow cross-origin) — so matching the _layouts path on
 // any host / any prefix is required. The g_fileInfo guard no-ops elsewhere.
+// Teams top-page entry points instead read meeting identities from React props.
 (function () {
     'use strict';
 
@@ -57,17 +62,56 @@
         return m ? +m[1] * 3600 + +m[2] * 60 + +m[3] : null;
     }
 
-    async function extractViaApi() {
-        const base = itemBase();
+    // Teams exposes exact recording/transcript identities in its React props.
+    // Use the manager's real request API across origins; ordinary fetch still
+    // serves standalone SharePoint pages and their embedded players.
+    function transcriptContext(value, title) {
+        const raw = value?.sitePath || value?.url;
+        if (!raw) return null;
+        let url;
+        try { url = new URL(raw); } catch { return null; }
+        if (url.protocol !== 'https:' || !url.hostname.endsWith('.sharepoint.com')) return null;
+        const match = /^(.*\/_api\/v2\.[01]\/drives\/[^/]+\/items\/[^/]+)(?:\/versions\/[^/]+)?\/media\/transcripts\/([^/]+)\/content$/.exec(url.pathname);
+        if (!match) return null;
+        return {
+            base: url.origin + match[1].replace('/_api/v2.0/', '/_api/v2.1/'),
+            transcriptId: match[2], title,
+            recordingFile: value.recordingFile || null,
+        };
+    }
+
+    function requestJson(url) {
+        if (new URL(url).origin === location.origin) {
+            return fetch(url).then(async response => {
+                if (!response.ok) throw new Error('transcript HTTP ' + response.status);
+                return response.json();
+            });
+        }
+        return new Promise((resolve, reject) => {
+            if (typeof GM_xmlhttpRequest !== 'function') return reject(new Error('GM_xmlhttpRequest is unavailable'));
+            GM_xmlhttpRequest({
+                method: 'GET', url, anonymous: false, timeout: 30000,
+                onload: response => {
+                    try {
+                        if (response.status < 200 || response.status >= 300) throw new Error('transcript HTTP ' + response.status);
+                        resolve(JSON.parse(response.responseText));
+                    } catch (error) { reject(error); }
+                },
+                onerror: () => reject(new Error('SharePoint transcript request failed')),
+                ontimeout: () => reject(new Error('SharePoint transcript request timed out')),
+                onabort: () => reject(new Error('SharePoint transcript request was cancelled')),
+            });
+        });
+    }
+
+    async function extractViaApi(context) {
+        const base = context?.base || itemBase();
         if (!base) throw new Error('g_fileInfo.spItemUrl not found (not a Stream recording page)');
-        const r1 = await fetch(base + '?select=media/transcripts&$expand=media/transcripts');
-        if (!r1.ok) throw new Error('transcript list HTTP ' + r1.status);
-        const list = ((await r1.json()).media || {}).transcripts || [];
+        const list = ((await requestJson(base + '?select=media/transcripts&$expand=media/transcripts')).media || {}).transcripts || [];
         if (!list.length) throw new Error('recording has no transcripts');
-        const t = list.find(x => x.isDefault) || list[0];
-        const r2 = await fetch(base + '/media/transcripts/' + t.id + '/streamContent?format=json');
-        if (!r2.ok) throw new Error('streamContent HTTP ' + r2.status);
-        const data = await r2.json();
+        const t = context?.transcriptId ? list.find(x => x.id === context.transcriptId) : list.find(x => x.isDefault) || list[0];
+        if (!t) throw new Error('The selected meeting transcript is no longer available');
+        const data = await requestJson(base + '/media/transcripts/' + encodeURIComponent(t.id) + '/streamContent?format=json');
         const speech = (data.entries || []).map(e => ({
             kind: 'speech',
             sec: offsetToSec(e.startOffset),
@@ -280,11 +324,11 @@
         return (s || 'teams-transcript').replace(/[\\/:*?"<>|]/g, '_');
     }
 
-    function showResult(result, title) {
+    function showResult(result, title, context) {
         const txt = formatText(result, title);
         const json = JSON.stringify({
             title,
-            recordingFile: (PAGE.g_fileInfo || {}).name || null,
+            recordingFile: context ? context.recordingFile : (PAGE.g_fileInfo || {}).name || null,
             method: result.method,
             apiError: result.apiError || null,
             transcripts: result.transcripts || null,
@@ -302,6 +346,9 @@
 
         const dlg = document.createElement('div');
         dlg.setAttribute('role', 'dialog');
+        dlg.setAttribute('aria-modal', 'true');
+        dlg.setAttribute('aria-label', title);
+        dlg.dataset.teamsTranscriptResult = 'true';
         dlg.style.cssText =
             'background:#fff;border-radius:8px;overflow:hidden;display:flex;flex-direction:column;' +
             'width:min(760px,92vw);max-height:82vh;' +
@@ -392,21 +439,26 @@
         return { idle: 'Transcript', busy: 'Extracting…' };
     })();
 
-    async function run(labelEl, btn) {
+    async function run(labelEl, btn, resolveContext) {
         btn.disabled = true;
         labelEl.textContent = LABEL.busy;
         try {
+            const context = resolveContext ? resolveContext() : null;
+            if (resolveContext && !context) throw new Error('No accessible transcript for this meeting');
             let result, apiError = null;
             try {
-                result = await extractViaApi();
+                result = await extractViaApi(context);
             } catch (e) {
+                // A different meeting's virtualized DOM must never replace a
+                // failed request for the item explicitly selected in Teams.
+                if (context) throw e;
                 apiError = e.message;
                 log('api failed:', e.message, '— falling back to DOM harvest');
                 result = await extractViaDom();
             }
             const fi = PAGE.g_fileInfo || {};
-            const title = fi.title || cleanRecordingName(fi.name) || 'teams-transcript';
-            showResult({ ...result, apiError }, title);
+            const title = context?.title || fi.title || cleanRecordingName(fi.name) || 'teams-transcript';
+            showResult({ ...result, apiError }, title, context);
         } catch (e) {
             showError(e);
         }
@@ -414,12 +466,85 @@
         labelEl.textContent = LABEL.idle;
     }
 
-    const TRANSCRIPT_SVG =
-        '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' +
-        '<rect x="2" y="3" width="9" height="1.5" rx="0.75"/>' +
-        '<rect x="2" y="6.5" width="12" height="1.5" rx="0.75"/>' +
-        '<rect x="2" y="10" width="11" height="1.5" rx="0.75"/>' +
-        '<rect x="2" y="13.5" width="6" height="1.5" rx="0.75"/></svg>';
+    function transcriptIcon() {
+        // Teams enforces Trusted Types: build SVG nodes without innerHTML.
+        const ns = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(ns, 'svg');
+        for (const [key, value] of Object.entries({ width: '16', height: '16', viewBox: '0 0 16 16', fill: 'currentColor', 'aria-hidden': 'true' })) svg.setAttribute(key, value);
+        for (const [y, width] of [[3, 9], [6.5, 12], [10, 11], [13.5, 6]]) {
+            const rect = document.createElementNS(ns, 'rect');
+            for (const [key, value] of Object.entries({ x: 2, y, width, height: 1.5, rx: 0.75 })) rect.setAttribute(key, String(value));
+            svg.append(rect);
+        }
+        return svg;
+    }
+
+    function reactProp(element, key) {
+        const fiberKey = PAGE.Object.keys(element).find(name => name.startsWith('__reactFiber$'));
+        for (let fiber = fiberKey && PAGE.Reflect.get(element, fiberKey), depth = 0; fiber && depth < 24; fiber = fiber.return, depth++) {
+            if (fiber.memoizedProps?.[key]) return fiber.memoizedProps[key];
+        }
+        return null;
+    }
+
+    function meetingContext(item) {
+        const meeting = reactProp(item, 'meeting');
+        const transcript = meeting?.transcripts?.find(transcript => transcript.hasPermission !== false);
+        return transcriptContext(transcript, meeting?.subject);
+    }
+
+    function detailContext(button) {
+        const recap = reactProp(button, 'selectedRecap');
+        if (!recap) return null;
+        const title = reactProp(button, 'subject') || document.title.split(' | ').slice(1, -1).join(' | ') || cleanRecordingName(recap.url ? decodeURIComponent(new URL(recap.url).pathname.split('/').pop()) : '');
+        return transcriptContext({ ...recap, recordingFile: recap.url ? decodeURIComponent(new URL(recap.url).pathname.split('/').pop()) : null }, title);
+    }
+
+    function teamsButton(donor, kind, resolveContext) {
+        const button = donor.cloneNode(false);
+        for (const attr of [...button.attributes]) {
+            if (!['type', 'class', 'style'].includes(attr.name)) button.removeAttribute(attr.name);
+        }
+        button.type = 'button';
+        button.dataset.teamsTranscriptTrigger = kind;
+        button.setAttribute('aria-label', LABEL.idle);
+        button.title = LABEL.idle;
+        button.style.cssText += `;background:${TRIGGER_BG};color:#fff;border-color:transparent;display:inline-flex;align-items:center;gap:6px;margin-left:8px;`;
+        const icon = document.createElement('span');
+        icon.style.cssText = 'display:flex;';
+        icon.append(transcriptIcon());
+        const label = document.createElement('span');
+        label.textContent = LABEL.idle;
+        button.append(icon, label);
+        button.addEventListener('click', event => {
+            event.stopPropagation();
+            run(label, button, resolveContext);
+        });
+        button.addEventListener('keydown', event => event.stopPropagation());
+        return button;
+    }
+
+    function startTeams() {
+        const reconcile = () => {
+            for (const item of document.querySelectorAll('[data-tid="podcast-meeting-item"]')) {
+                const existing = item.querySelector('[data-teams-transcript-trigger]');
+                if (!meetingContext(item)) { existing?.remove(); continue; }
+                if (existing) continue;
+                const donor = item.querySelector('button[data-tid="view-recap-button"]') || [...item.querySelectorAll('button')].at(-1);
+                if (donor) donor.after(teamsButton(donor, 'list', () => meetingContext(item)));
+            }
+            const donor = document.querySelector('[data-tid="recap-open-in-stream-button"]');
+            if (donor && detailContext(donor) && !donor.parentElement.querySelector('[data-teams-transcript-trigger="detail"]')) {
+                donor.after(teamsButton(donor, 'detail', () => detailContext(donor)));
+            }
+        };
+        let timer;
+        new MutationObserver(() => {
+            if (timer) return;
+            timer = setTimeout(() => { timer = null; reconcile(); }, 100);
+        }).observe(document.documentElement, { childList: true, subtree: true });
+        reconcile();
+    }
 
     // Insert into the SharePoint command bar, before Microsoft's own button group
     // (Teams / Share). Clone the primary ("Share") button's ms-OverflowSet-item —
@@ -461,7 +586,7 @@
                 iconSlot.className = '';
                 iconSlot.removeAttribute('style');
                 iconSlot.style.cssText = 'display:flex;align-items:center;margin-right:4px;';
-                iconSlot.innerHTML = TRANSCRIPT_SVG;
+                iconSlot.replaceChildren(transcriptIcon());
             }
             const labelEl = item.querySelector('.ms-Button-label');
             if (labelEl) labelEl.textContent = LABEL.idle;
@@ -477,7 +602,7 @@
         labelEl.textContent = LABEL.idle;
         const icon = document.createElement('i');
         icon.style.cssText = 'display:flex;align-items:center;';
-        icon.innerHTML = TRANSCRIPT_SVG;
+        icon.append(transcriptIcon());
         btn.append(icon, labelEl);
         btn.style.cssText =
             'position:fixed;bottom:20px;right:20px;z-index:2147483646;padding:10px 18px;' +
@@ -492,6 +617,10 @@
     // actually exposes g_fileInfo + .spItemUrl are real recording players.
     // The command bar also renders late, so poll for both before injecting.
     (async () => {
+        if (/^teams\.(cloud\.microsoft|microsoft\.com)$/.test(location.hostname)) {
+            startTeams();
+            return;
+        }
         let haveFile = false;
         for (let i = 0; i < 240; i++) {
             const file = itemBase();
