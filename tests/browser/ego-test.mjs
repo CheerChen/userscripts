@@ -4,6 +4,14 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { control, root } from "../../tools/scriptcat.mjs";
 
+// Ego diagnostics name the page's URL and title (meeting, issue, or folder names).
+// Keep failures to status text: drop URLs, titles, and anything the script printed.
+export function redact(text) {
+  return String(text)
+    .replace(/last (URL|title) was "(?:[^"\\]|\\.)*"/g, "last $1 was <redacted>")
+    .replace(/\b(?:https?|chrome-extension|file):\/\/[^\s"'<>)]+/g, "<url>");
+}
+
 // Use Ego's authenticated browser, not a separately launched Playwright profile.
 export function egoRun(fn, data) {
   return new Promise((accept, reject) => {
@@ -31,78 +39,125 @@ export function egoRun(fn, data) {
         .map((line) => line.trim())
         .find((line) => line.startsWith("RESULT:"));
       if (code !== 0 || !line)
-        return reject(new Error(JSON.stringify({ code, stderr, stdout })));
+        return reject(new Error(JSON.stringify({ code, stderr: redact(stderr) })));
       accept(JSON.parse(line.slice(7)));
     });
   });
 }
 
-export async function installed({ space, name, version }) {
+// Returns the installed source hash. With `expected`, keeps re-reading until the
+// manager has applied the sync (delivery has no acknowledgement) or times out.
+export async function installed({ space, name, version, expected }) {
   const task = await taskSpace(space);
+  // egoRun serializes this function alone, so module helpers are not in scope.
   const tab = (await task.tabs()).find((tab) =>
-    /chrome-extension:\/\/(ndcooeababalnlpkfedmmbbbgkljhpjf|jaehimmlecjmebpekkipmpmbpfhdacom)\/src\/options.html/.test(
-      tab.url,
-    ),
+    /^chrome-extension:\/\/(ndcooeababalnlpkfedmmbbbgkljhpjf|jaehimmlecjmebpekkipmpmbpfhdacom)\/src\/options.html/.test(tab.url),
   );
   if (!tab)
     throw new Error("Keep the ScriptCat options page open in this task space");
   const page = tab.label ? task.page(tab.label) : await task.adopt(tab.page);
-  await page.goto(tab.url.split("#")[0]);
-  await page.waitForFunction(
-    ({ name, version }) =>
-      [...document.querySelectorAll("tr")].some(
-        (row) =>
-          row.textContent.includes(name) && row.textContent.includes(version),
-      ),
-    { name, version },
-    { timeout: 15000 },
-  );
-  const link = await page.evaluate(
-    (name) =>
-      [...document.querySelectorAll("a")].find(
-        (a) => a.textContent.trim() === name,
-      )?.href,
-    name,
-  );
-  if (!link) throw new Error("Installed script has no editor link");
-  await page.goto(link);
-  await page.waitForSelector("loc=css:.monaco-editor", { state: "visible" });
-  return await page.evaluate(async () => {
-    // ScriptCat 1.4's editor does not expose window.monaco. Read its loaded code prop;
-    // this is diagnostic only, never an alternative route for installing a script.
-    let source;
-    for (
-      let element = document.querySelector(".monaco-editor");
-      element && !source;
-      element = element.parentElement
-    ) {
-      const key = Object.keys(element).find((key) =>
-        key.startsWith("__reactFiber"),
-      );
+  const list = tab.url.split("#")[0];
+  const deadline = Date.now() + 20000;
+  let result;
+  do {
+    await page.goto(list);
+    await page.waitForFunction(
+      ({ name, version }) => {
+        const exact = new RegExp("(^|[^\\d.])" + version.replace(/\./g, "\\.") + "($|[^\\d.])");
+        return [...document.querySelectorAll("a")].some(
+          (a) => a.textContent.trim() === name && exact.test(a.closest("tr")?.textContent || ""),
+        );
+      },
+      { name, version },
+      { timeout: 15000 },
+    );
+    const links = await page.evaluate(
+      (name) =>
+        [...document.querySelectorAll("a")]
+          .filter((a) => a.textContent.trim() === name)
+          .map((a) => a.href),
+      name,
+    );
+    if (links.length !== 1)
+      throw new Error(`Expected exactly one installed "${name}", found ${links.length}`);
+    await page.goto(links[0]);
+    await page.waitForSelector("loc=css:.monaco-editor", { state: "visible" });
+    result = await page.evaluate(async () => {
+      // ScriptCat 1.4's editor does not expose window.monaco. Read its loaded code prop;
+      // this is diagnostic only, never an alternative route for installing a script.
+      let source;
       for (
-        let fiber = key && element[key], depth = 0;
-        fiber && depth < 12;
-        fiber = fiber.return, depth++
+        let element = document.querySelector(".monaco-editor");
+        element && !source;
+        element = element.parentElement
       ) {
-        if (fiber.memoizedProps?.code?.includes("==UserScript==")) {
-          source = fiber.memoizedProps.code;
-          break;
+        const key = Object.keys(element).find((key) =>
+          key.startsWith("__reactFiber"),
+        );
+        for (
+          let fiber = key && element[key], depth = 0;
+          fiber && depth < 12;
+          fiber = fiber.return, depth++
+        ) {
+          if (fiber.memoizedProps?.code?.includes("==UserScript==")) {
+            source = fiber.memoizedProps.code;
+            break;
+          }
         }
       }
-    }
-    if (!source)
-      throw new Error("Cannot read installed source from ScriptCat editor");
-    const bytes = await crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(source),
+      if (!source)
+        throw new Error("Cannot read installed source from ScriptCat editor");
+      const bytes = await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(source),
+      );
+      return {
+        hash: [...new Uint8Array(bytes)]
+          .map((byte) => byte.toString(16).padStart(2, "0"))
+          .join(""),
+      };
+    });
+    if (!expected || result.hash === expected) break;
+    await new Promise((accept) => setTimeout(accept, 500));
+  } while (Date.now() < deadline);
+  return result;
+}
+
+// Delete generated fixtures by exact name through the manager UI, including
+// duplicates and copies left by an interrupted run. Never touches other scripts.
+export async function uninstallFixture({ space, name }) {
+  if (!name.startsWith("Userscripts ") || !name.includes("Fixture"))
+    throw new Error("Only generated test fixtures may be removed");
+  const task = await taskSpace(space);
+  // egoRun serializes this function alone, so module helpers are not in scope.
+  const tab = (await task.tabs()).find((tab) =>
+    /^chrome-extension:\/\/(ndcooeababalnlpkfedmmbbbgkljhpjf|jaehimmlecjmebpekkipmpmbpfhdacom)\/src\/options.html/.test(tab.url),
+  );
+  if (!tab)
+    throw new Error("Keep the ScriptCat options page open in this task space");
+  const page = tab.label ? task.page(tab.label) : await task.adopt(tab.page);
+  const list = tab.url.split("#")[0];
+  let removed = 0;
+  for (;;) {
+    await page.goto(list);
+    await page.waitForSelector("loc=css:table");
+    const id = await page.evaluate((name) => {
+      const link = [...document.querySelectorAll('a[href*="/script/editor/"]')].find(
+        (a) => a.textContent.trim() === name,
+      );
+      return link?.href.split("/").pop() || null;
+    }, name);
+    if (!id) return { removed };
+    if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error("Invalid fixture identity");
+    await page.click(`loc=css:tr:has(a[href$="/script/editor/${id}"]) .arco-btn-group > button`);
+    await page.waitForSelector("loc=role:button[name=确定]");
+    await page.click("loc=role:button[name=确定]");
+    await page.waitForFunction(
+      (id) => !document.querySelector(`a[href$="/script/editor/${id}"]`),
+      id,
     );
-    return {
-      hash: [...new Uint8Array(bytes)]
-        .map((byte) => byte.toString(16).padStart(2, "0"))
-        .join(""),
-      page: location.href,
-    };
-  });
+    if (++removed > 5) throw new Error("Fixture removal did not converge");
+  }
 }
 
 async function verify({ space, label, revision, create }) {
@@ -190,7 +245,8 @@ async function main() {
   const space = Number(process.argv[2]);
   if (!Number.isInteger(space) || space < 1)
     throw new Error("Usage: npm run test:ego -- <ego-space-id>");
-  let fixturePage;
+  const name = "Userscripts ScriptCat Sync E2E Fixture";
+  let fixturePage, synced = false;
   const file = "tests/browser/.generated/live.user.js";
   try {
     if (!(await control("status")).connected)
@@ -199,15 +255,15 @@ async function main() {
       await readFile(resolve(root, "tests/browser/fixtures/automation.user.js"), "utf8")
     ).replace(
       "Userscripts ScriptCat Automation Fixture",
-      "Userscripts ScriptCat Watched E2E Fixture",
+      name,
     );
-    const name = "Userscripts ScriptCat Watched E2E Fixture";
     await mkdir(resolve(root, "tests/browser/.generated"), { recursive: true });
     await writeFile(resolve(root, file), template);
-    await control("sync", { file, watch: true });
+    synced = true;
+    await control("sync", { file });
     const { createHash } = await import("node:crypto");
     const hash = (source) => createHash("sha256").update(source).digest("hex");
-    const v1 = await egoRun(installed, { space, name, version: "1.0.0" });
+    const v1 = await egoRun(installed, { space, name, version: "1.0.0", expected: hash(template) });
     if (v1.hash !== hash(template))
       throw new Error("Installed v1 source differs from the local file");
     const first = await egoRun(verify, { space, revision: "v1", create: true });
@@ -218,20 +274,12 @@ async function main() {
     const updated = template
       .replace("// @version      1.0.0", "// @version      1.0.1")
       .replace(/const version = (["'])v1\1;/, 'const version = "v2";');
-    // Write a generated test artifact; the watcher alone must deliver this update.
-    const beforeUpdate = (await control("status")).lastSent.at;
+    // An explicit second sync must update the same installation in place.
     await writeFile(resolve(root, file), updated);
-    const deadline = Date.now() + 10000;
-    while (
-      (await control("status")).lastSent.at === beforeUpdate &&
-      Date.now() < deadline
-    )
-      await new Promise((accept) => setTimeout(accept, 100));
-    if ((await control("status")).lastSent.at === beforeUpdate)
-      throw new Error("Watcher did not send the update");
-    const v2 = await egoRun(installed, { space, name, version: "1.0.1" });
+    await control("sync", { file });
+    const v2 = await egoRun(installed, { space, name, version: "1.0.1", expected: hash(updated) });
     if (v2.hash !== hash(updated))
-      throw new Error("Installed v2 source differs from the watched file");
+      throw new Error("Installed v2 source differs from the updated file");
     const second = await egoRun(verify, {
       space,
       revision: "v2",
@@ -239,13 +287,13 @@ async function main() {
     });
     console.log(
       JSON.stringify({
-        stage: "watch-update-v2",
+        stage: "update-v2",
         ...second,
         sourceHash: "matched",
       }),
     );
   } finally {
-    await control("unwatch", { file }).catch(() => {});
+    const errors = [];
     if (fixturePage)
       await egoRun(
         async ({ space, label }) => {
@@ -254,7 +302,10 @@ async function main() {
           return { closed: label };
         },
         { space, label: fixturePage },
-      );
+      ).catch((error) => errors.push(error));
+    if (synced)
+      await egoRun(uninstallFixture, { space, name }).catch((error) => errors.push(error));
+    if (errors.length) throw new AggregateError(errors, "Fixture cleanup failed");
   }
 }
 

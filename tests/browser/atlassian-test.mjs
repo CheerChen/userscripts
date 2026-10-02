@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { control, root } from "../../tools/scriptcat.mjs";
-import { egoRun, installed } from "./ego-test.mjs";
+import { egoRun, installed, uninstallFixture } from "./ego-test.mjs";
 import { clipboardText, clearClipboardForTest, withMacClipboard } from "./clipboard-guard.mjs";
 import { inIframe } from "./iframe.mjs";
 
@@ -19,7 +19,8 @@ if (!process.argv.includes("--clipboard-preserved")) {
 async function main() {
   const source = await readFile(resolve(root, "confluence-jira-title-copy.user.js"), "utf8");
   const fixture = "tests/browser/.generated/atlassian.user.js";
-  let fixturePage, real;
+  let fixturePage, real, fixtureSynced = false;
+  const fixtureName = "Userscripts Atlassian Browser Fixture";
   const hash = value => createHash("sha256").update(value).digest("hex");
   const markdown = (title, url) => '[' + title.replace(/\\/g, '\\\\').replace(/\[/g, '\\[').replace(/\]/g, '\\]') + '](' + url.replace(/\(/g, '%28').replace(/\)/g, '%29') + ')';
   async function copied(label, expected, selector = "#customCopyButton") {
@@ -58,8 +59,8 @@ async function main() {
     throw new Error("Clipboard mismatch: " + JSON.stringify({actualLength:actual.length,expectedLength:expected.length,click,...status}));
   }
   try {
-    await control("sync", {file: "confluence-jira-title-copy.user.js", watch: true});
-    const loaded = await egoRun(installed, {space, name: "Confluence Jira 复制标题和链接", version: source.match(/^\/\/\s*@version\s+(\S+)/m)[1]});
+    await control("sync", {file: "confluence-jira-title-copy.user.js"});
+    const loaded = await egoRun(installed, {space, name: "Confluence Jira 复制标题和链接", version: source.match(/^\/\/\s*@version\s+(\S+)/m)[1], expected: hash(source)});
     if (loaded.hash !== hash(source)) throw new Error("Installed production source mismatch");
     real = await egoRun(async ({space}) => {
       const task = await taskSpace(space);
@@ -121,13 +122,14 @@ async function main() {
       wiki='verified';
     }
 
-    const fixtureSource = source.replace(/^\/\/ (@name(?::[^\s]+)?)\s+.*$/gm, "// $1         Userscripts Atlassian Browser Fixture")
+    const fixtureSource = source.replace(/^\/\/ (@name(?::[^\s]+)?)\s+.*$/gm, "// $1         " + fixtureName)
       .replace(/^\/\/ @(updateURL|downloadURL)\s+.*\n?/gm, "")
       .replace("// @match        *://*.atlassian.net/*", "// @match        http://127.0.0.1:8642/__fixture/atlassian/*\n// @match        http://localhost:8642/__fixture/atlassian/*");
     await mkdir(resolve(root,"tests/browser/.generated"),{recursive:true});
     await writeFile(resolve(root,fixture),fixtureSource);
+    fixtureSynced = true;
     await control("sync",{file:fixture});
-    const loadedFixture=await egoRun(installed,{space,name:"Userscripts Atlassian Browser Fixture",version:source.match(/^\/\/\s*@version\s+(\S+)/m)[1]});
+    const loadedFixture=await egoRun(installed,{space,name:fixtureName,version:source.match(/^\/\/\s*@version\s+(\S+)/m)[1],expected:hash(fixtureSource)});
     if(loadedFixture.hash!==hash(fixtureSource)) throw new Error("Installed fixture source mismatch");
     fixturePage=await egoRun(async ({space})=>{
       const page=await (await taskSpace(space)).newPage();
@@ -189,8 +191,11 @@ async function main() {
     await copied(fixturePage,markdown("Demo wiki [one]","http://localhost:8642/__fixture/atlassian/wiki/spaces/DEMO/pages/1"));
     console.log(JSON.stringify({sourceHash:"matched",realJira:{clipboard:"verified",navigation},realWiki:wiki,synthetic:{spa:"verified",remount:"verified",filename:"verified",dialogSelection:"verified",nestedSameOrigin:"verified",srcdoc:"verified",crossSite:"verified"},clipboard:"restored by guard"}));
   } finally {
-    await control("unwatch",{file:fixture}).catch(()=>{});
-    if(fixturePage) await egoRun(async ({space,label})=>{await (await taskSpace(space)).page(label).close();return true;},{space,label:fixturePage});
-    if(real) await egoRun(async ({space,label,url})=>{const page=(await taskSpace(space)).page(label);await page.goto(url);return true;},{space,label:real.label,url:real.original});
+    const errors=[];
+    if(fixturePage) await egoRun(async ({space,label})=>{await (await taskSpace(space)).page(label).close();return true;},{space,label:fixturePage}).catch(error=>errors.push(error));
+    if(real) await egoRun(async ({space,label,url})=>{const page=(await taskSpace(space)).page(label);await page.goto(url);return true;},{space,label:real.label,url:real.original}).catch(error=>errors.push(error));
+    // Leave no generated fixture installed in ScriptCat.
+    if(fixtureSynced) await egoRun(uninstallFixture,{space,name:fixtureName}).catch(error=>errors.push(error));
+    if(errors.length) throw new AggregateError(errors,"Atlassian test cleanup failed");
   }
 }

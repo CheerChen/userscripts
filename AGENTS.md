@@ -11,7 +11,8 @@
   duplicate copy of the same script.
 - Iterate through local edit → ScriptCat sync → installed-source SHA-256 check
   → real document reload → browser interaction → result verification. WebSocket
-  delivery is not an installation acknowledgement, and watching is not a test.
+  delivery is not an installation acknowledgement. Sync explicitly per change;
+  the bridge does not watch files.
 - Add or extend repeatable browser regression coverage for changed features.
   Test the real userscript-manager sandbox and GM APIs rather than injecting
   source into the page as a substitute for installation.
@@ -28,8 +29,8 @@
 ## Commands and layout
 
 - `npm ci`: install the bridge dependency at the repository root.
-- `npm run test:ego -- <space-id>`: bridge, watcher, source hash, real GM APIs,
-  cross-site iframe, and modal fixture regression.
+- `npm run test:ego -- <space-id>`: bridge, in-place update, source hash, real
+  GM APIs, cross-site iframe, and modal fixture regression.
 - `npm run test:teams:entries -- <space-id>`: Teams recap list, meeting selection,
   detail toolbar, and actual TXT/JSON downloads (Chinese Teams UI).
 - `npm run test:teams -- <space-id>`: existing Teams recap transcript iframe.

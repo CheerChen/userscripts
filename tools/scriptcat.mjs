@@ -1,6 +1,5 @@
 import http from "node:http";
 import { readFile, mkdir, writeFile, chmod, realpath } from "node:fs/promises";
-import { watchFile, unwatchFile } from "node:fs";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, resolve, relative, isAbsolute } from "node:path";
@@ -57,12 +56,6 @@ async function serve() {
   await mkdir(stateDir, { recursive: true, mode: 0o700 });
   await chmod(stateDir, 0o700);
   const token = randomBytes(32).toString("hex");
-  const watched = new Map();
-  const watchState = resolve(stateDir, "watched.json");
-  const saveWatches = () =>
-    writeFile(watchState, JSON.stringify([...watched.values()]), {
-      mode: 0o600,
-    });
   let client;
   let handshaken = false;
   let lastSent = null;
@@ -89,27 +82,6 @@ async function serve() {
     console.log(JSON.stringify({ event: "sent", ...lastSent }));
     return { sent: true, ...lastSent }; // Protocol has no install acknowledgement.
   };
-  const remember = async (file) => {
-    const { path } = await scriptFile(file);
-    if (watched.has(path)) return;
-    watched.set(path, file);
-    watchFile(path, { interval: 300 }, (current, previous) => {
-      if (current.mtimeMs === previous.mtimeMs) return;
-      send(file).catch((error) =>
-        console.error(
-          JSON.stringify({ event: "sync-error", file, error: error.message }),
-        ),
-      );
-    });
-    await saveWatches();
-  };
-  let previousWatches = [];
-  try {
-    previousWatches = JSON.parse(await readFile(watchState, "utf8"));
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
-  }
-  for (const file of previousWatches) await remember(file);
   const json = (response, status, body) => {
     response.writeHead(status, {
       "content-type": "application/json",
@@ -159,24 +131,15 @@ async function serve() {
       if (url.pathname === "/control/status") {
         return json(response, 200, {
           connected: !!client && handshaken,
-          watched: [...watched.values()],
           lastSent,
         });
       }
       if (url.pathname === "/control/sync") {
-        if (data.watch) await remember(data.file);
         return json(
           response,
           200,
           await send(data.file, data.identity || data.file),
         );
-      }
-      if (url.pathname === "/control/unwatch") {
-        const { path } = await scriptFile(data.file);
-        unwatchFile(path);
-        watched.delete(path);
-        await saveWatches();
-        return json(response, 200, { unwatched: data.file });
       }
       return json(response, 404, { error: "Unknown command" });
     } catch (error) {
@@ -199,13 +162,15 @@ async function serve() {
   wss.on("connection", (ws) => {
     client = ws;
     handshaken = false;
+    ws.alive = true;
+    ws.on("pong", () => {
+      ws.alive = true;
+    });
     ws.on("message", (raw) => {
       try {
         if (JSON.parse(raw.toString()).action !== "hello") return;
         handshaken = true;
         console.log(JSON.stringify({ event: "scriptcat-connected" }));
-        for (const file of watched.values())
-          send(file).catch((error) => console.error(error.message));
       } catch {
         ws.close(1003, "Invalid message");
       }
@@ -223,6 +188,19 @@ async function serve() {
     );
     ws.send(JSON.stringify({ action: "hello" }));
   });
+  // A half-open socket (sleep/wake, network change) would otherwise block every
+  // reconnect with 403. Browsers answer ping frames automatically.
+  const heartbeat = setInterval(() => {
+    for (const ws of wss.clients) {
+      if (!ws.alive) {
+        console.error(JSON.stringify({ event: "ws-stale" }));
+        ws.terminate();
+        continue;
+      }
+      ws.alive = false;
+      ws.ping();
+    }
+  }, 10000);
   await new Promise((accept, reject) => {
     server.once("error", reject);
     server.listen(port, "127.0.0.1", accept);
@@ -233,7 +211,7 @@ async function serve() {
     JSON.stringify({ event: "listening", url: `ws://127.0.0.1:${port}` }),
   );
   const stop = () => {
-    for (const path of watched.keys()) unwatchFile(path);
+    clearInterval(heartbeat);
     wss.clients.forEach((ws) => ws.terminate());
     wss.close();
     server.close();
@@ -246,24 +224,16 @@ if (
   process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-  const [command, file, ...flags] = process.argv.slice(2);
+  const [command, file] = process.argv.slice(2);
   try {
     if (command === "serve") await serve();
     else if (command === "status")
       console.log(JSON.stringify(await control("status"), null, 2));
     else if (command === "sync" && file)
-      console.log(
-        JSON.stringify(
-          await control("sync", { file, watch: flags.includes("--watch") }),
-          null,
-          2,
-        ),
-      );
-    else if (command === "unwatch" && file)
-      console.log(JSON.stringify(await control("unwatch", { file }), null, 2));
+      console.log(JSON.stringify(await control("sync", { file }), null, 2));
     else
       throw new Error(
-        "Usage: node tools/scriptcat.mjs serve|status|sync <file.user.js> [--watch]|unwatch <file.user.js>",
+        "Usage: node tools/scriptcat.mjs serve|status|sync <file.user.js>",
       );
   } catch (error) {
     console.error(error.message);

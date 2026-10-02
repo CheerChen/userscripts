@@ -12,14 +12,12 @@ const source = await readFile(
   "utf8",
 );
 const version = source.match(/^\/\/\s*@version\s+(\S+)/m)[1];
-await control("sync", {
-  file: "teams-transcript-extractor.user.js",
-  watch: true,
-});
+await control("sync", { file: "teams-transcript-extractor.user.js" });
 const loaded = await egoRun(installed, {
   space,
   name: "Teams 会议转录提取器",
   version,
+  expected: createHash("sha256").update(source).digest("hex"),
 });
 if (loaded.hash !== createHash("sha256").update(source).digest("hex"))
   throw new Error("Installed Teams source differs from repository");

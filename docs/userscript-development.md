@@ -35,12 +35,12 @@ Keep ScriptCat's options page open in that space for installed-source checks.
 ## Iteration and verification
 
 ```sh
-# Synchronize now and watch subsequent local edits.
-node tools/scriptcat.mjs sync teams-transcript-extractor.user.js --watch
+# Push the current file once; repeat after every edit you want installed.
+node tools/scriptcat.mjs sync teams-transcript-extractor.user.js
 node tools/scriptcat.mjs status
 
 # Synthetic end-to-end regression: install v1, verify source, test top document
-# and cross-site iframe, change the generated file to v2, verify automatic sync.
+# and cross-site iframe, then sync v2 and verify the same installation updated.
 npm run test:ego -- <ego-space-id>
 
 # Teams list-item export without navigation, another meeting's selection,
@@ -53,15 +53,16 @@ npm run test:teams -- <ego-space-id>
 # Another production userscript: real Jira/linked Confluence clipboard checks,
 # plus synthetic SPA, remount, same-origin/srcdoc and cross-site iframe cases.
 npm run test:atlassian -- <ego-space-id>
-
-node tools/scriptcat.mjs unwatch teams-transcript-extractor.user.js
 ```
 
 Use local edit → sync → installed-source verification → document reload →
 interaction → result checks. Repair failures and repeat the relevant test.
 WebSocket delivery is not an installation acknowledgement. Tests compare the
 installed source's SHA-256 with the repository source and then validate behavior.
-Watching alone syncs code; it does not reload an existing document or test it.
+The bridge deliberately has no file watcher: a local edit reaches the browser
+only through an explicit sync, so half-finished files and other branches never
+install themselves. Each test syncs its script once, waits until the installed
+source hash matches, and removes any generated fixture from ScriptCat afterward.
 
 The fixture checks `unsafeWindow`, real GM storage and `GM_xmlhttpRequest`,
 cross-site iframe injection, and the export modal for both source revisions.
@@ -70,7 +71,7 @@ a stable ID derived from the local file URI: keep the production userscript's
 path stable and avoid installing a second copy separately.
 
 When migrating from the former `dev/` layout, the generated fixture's file URI
-changes. Disable the old Watched E2E Fixture copy in ScriptCat before running
+changes. Remove any old Watched E2E Fixture copy from ScriptCat before running
 the new fixture test; otherwise both copies inject into the fixture page. The
 production userscript paths are unchanged, so their installed IDs stay stable.
 If the optional login service is configured, update its script path as below.
@@ -118,7 +119,9 @@ SPA transitions, permissions, frames, and download checks where relevant.
 
 - **Disconnected:** inspect bridge status, then ScriptCat's Development Tool
   connection and extension permissions. Do not start a second bridge when the
-  existing port is occupied. Check the optional service logs on macOS.
+  existing port is occupied. The bridge pings the socket every 10 seconds and
+  drops one that stops answering (sleep/wake, network change), so a reconnect
+  is accepted within about 20 seconds. Check the optional service logs on macOS.
 - **Sync succeeded but behavior is stale:** compare installed source first,
   then reload the actual document that owns the script, including the iframe.
   For same-URL reloads, wait for `performance.timeOrigin` to change before
@@ -142,9 +145,9 @@ SPA transitions, permissions, frames, and download checks where relevant.
 
 The bridge listens only on loopback and accepts stable/Beta ScriptCat extension
 origins. HTTP control requires a token in the private
-`~/.local/state/userscripts-scriptcat/` directory. Watched paths persist there
-and are resent after reconnect. No source or token is logged. This channel is
-for a trusted local machine, not remote access.
+`~/.local/state/userscripts-scriptcat/` directory. No source or token is
+logged; browser-test failures redact page URLs and titles from Ego diagnostics.
+This channel is for a trusted local machine, not remote access.
 
 Do not commit tokens, browser state, real transcript downloads, tenant links,
 employee identifiers, or hard-coded internal meeting names. Keep tests generic
@@ -155,9 +158,9 @@ before a commit even if automated privacy checks pass.
 
 A LaunchAgent is a macOS per-user login service. It is not required for testing:
 the default is to run `npm run serve` on demand and stop it when finished. A
-resident bridge only handles connections and file synchronization; it does not
-run browser tests in the background. Use the optional service only when
-continuous synchronization across sessions is desired.
+resident bridge only accepts the ScriptCat connection and explicit sync
+requests; it does not watch files or run browser tests in the background. Use
+the optional service only to avoid reconnecting ScriptCat each session.
 
 A local LaunchAgent can keep the bridge running without an open terminal. Its
 `ProgramArguments` must use the absolute Node executable and the repository's

@@ -9,8 +9,8 @@ const space = Number(process.argv[2]);
 if (!Number.isInteger(space) || space < 1)
   throw new Error("Usage: npm run test:teams:entries -- <ego-space-id>");
 const source = await readFile(resolve(root, "teams-transcript-extractor.user.js"), "utf8");
-await control("sync", {file: "teams-transcript-extractor.user.js", watch: true});
-const loaded = await egoRun(installed, {space, name: "Teams 会议转录提取器", version: source.match(/^\/\/\s*@version\s+(\S+)/m)[1]});
+await control("sync", {file: "teams-transcript-extractor.user.js"});
+const loaded = await egoRun(installed, {space, name: "Teams 会议转录提取器", version: source.match(/^\/\/\s*@version\s+(\S+)/m)[1], expected: createHash("sha256").update(source).digest("hex")});
 if (loaded.hash !== createHash("sha256").update(source).digest("hex"))
   throw new Error("Installed Teams source differs from repository");
 
