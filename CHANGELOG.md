@@ -119,6 +119,14 @@
 
 ## PikPak Aria2 Helper
 
+### v0.3.0 (2026-10-02)
+- Send from PikPak's native right-click menu or selected-items toolbar (send entry first in both); no separate file browser. The menu closes after sending and the selection is kept.
+- Folders are scanned fully (with pagination) before submitting, keeping nested paths; overlapping selections are deduplicated, and a failed scan submits nothing.
+- Sending two or more items asks for confirmation first.
+- Progress panel with Stop and Retry unsent items; results show success, warning, or error icons. Timed-out or unconfirmed submissions are not retried automatically.
+- Settings moved to the top-right gear menu in a modal matching PikPak's settings dialog. Sending requires a successful connection test of the saved RPC URL/token, rechecked before every batch; a refusal shows a notice that opens settings on request.
+- Removed the Preact/HTM dependencies. Added a real ScriptCat/Ego regression test against a loopback mock RPC (never downloads).
+
 ### v0.1.0 (2026-04-03)
 - Full rewrite: React replaced with Preact + htm, dependency size reduced from 140KB to 5KB
 - Add bilingual UI (Chinese/English), auto-switches based on browser language

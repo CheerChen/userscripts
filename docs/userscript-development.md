@@ -53,6 +53,9 @@ npm run test:teams -- <ego-space-id>
 # Another production userscript: real Jira/linked Confluence clipboard checks,
 # plus synthetic SPA, remount, same-origin/srcdoc and cross-site iframe cases.
 npm run test:atlassian -- <ego-space-id>
+
+# PikPak native selection and context menu; mock RPC only, never real downloads.
+npm run test:pikpak -- <ego-space-id>
 ```
 
 Use local edit → sync → installed-source verification → document reload →
@@ -93,6 +96,29 @@ original Jira URL afterward and never edits business content. It also installs
 a generated copy of the same source (only fixture metadata differs) through
 ScriptCat for public-data SPA, remount, nested frame, srcdoc, and cross-site
 tests. These synthetic cases supplement rather than replace authenticated tests.
+
+The PikPak regression reuses the bridge, Ego runner, installed-source hash check,
+and guarded fixture removal. It sends from the real context menu and native
+multi-selection toolbar to a temporary loopback mock RPC; real signed download
+URLs remain in memory and are never downloaded or logged. Public fixture data
+checks pagination, nested Linux/Windows paths, overlapping selections, offscreen
+IDs, selection changes during submission, retry, cancellation, scan failures,
+adapter failures, and toolbar remounts. The fixture is installed through ScriptCat
+with only its name, match rules, and API origin changed. Cleanup restores settings
+and navigation, closes the temporary page/server, and removes the exact fixture
+from ScriptCat. Keep real aria2 acceptance and download verification separate
+and obtain authorization before creating tasks.
+
+The PikPak test also checks real menu grouping/hover equality, leading menu and
+toolbar entries, menu closing after send with the selection kept, multi-item
+confirmation (cancel submits nothing), success/warning/error result icons,
+icon-only toolbar, gear-menu settings, modal focus/style structure and centering
+under PikPak's own dialog CSS, and refusal when the RPC is offline or settings
+changed after testing: a notice appears first, and settings open only from its
+action. Cleanup first dismisses any open notice, confirmation, or menu, then
+restores RPC field values without contacting the user's real endpoint. Re-test
+the restored settings before live sending; successful test-and-save validation
+is intentionally not forged.
 
 Clipboard tests currently require macOS. `clipboard-guard.mjs` snapshots each
 native pasteboard item's typed data in memory using

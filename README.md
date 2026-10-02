@@ -8,6 +8,10 @@ Personal userscripts for improving practical web workflows.
 
 Push files and folders from PikPak to Aria2 for downloading.
 
+Use PikPak's native right-click menu or selected-items toolbar—no second file
+picker. Includes recursive folder sending, progress, cancellation, and retry.
+See the [usage notes](docs/pikpak-aria2-helper.md).
+
 - Source: [pikpak-aria2-helper.user.js](./pikpak-aria2-helper.user.js)
 - Install: [Install](https://raw.githubusercontent.com/CheerChen/userscripts/master/pikpak-aria2-helper.user.js)
 

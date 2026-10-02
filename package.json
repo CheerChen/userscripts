@@ -10,6 +10,7 @@
     "test:teams": "node tests/browser/teams-test.mjs",
     "test:teams:entries": "node tests/browser/teams-entry-test.mjs",
     "test:atlassian": "node tests/browser/atlassian-test.mjs",
+    "test:pikpak": "node tests/browser/pikpak-test.mjs",
     "test:smoke": "npm --prefix tests test"
   },
   "dependencies": {

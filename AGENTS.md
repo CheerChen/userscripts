@@ -39,6 +39,10 @@
   regressions. Requires macOS; restores native clipboard formats in memory.
 - `npm --prefix tests ci` then `npm run test:smoke`: existing Manebi smoke tests.
   These do not replace browser tests for other scripts.
+- `npm run test:pikpak -- <space-id>`: native PikPak context menu and selection
+  toolbar against a temporary loopback mock RPC, plus public-data pagination,
+  nested paths, snapshot isolation, retry/cancel, and adapter failure checks.
+  It restores RPC settings, never starts real downloads, and uninstalls its fixture.
 - Keep runnable bridge utilities in `tools/`, browser tests and fixtures in
   `tests/browser/`, and detailed instructions in `docs/`. Root README should
   link to the manual rather than duplicate it.
