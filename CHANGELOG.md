@@ -75,7 +75,11 @@
 
 ---
 
-## PikPak Batch JAV Renamer Assistant
+## PikPak Batch Renamer Assistant
+
+### v0.1.4 (2026-06-23)
+- Rename the script to PikPak Batch Renamer Assistant and drop the genre term from most localized names and descriptions (ru/de names and de description unchanged)
+- Move the Scan Codes button from the toolbar to the footer, between Cancel and Next, restyled as an outline button with a fixed label
 
 ### v0.1.3 (2026-04-20)
 - Add floating action button entry for batch renaming
@@ -192,7 +196,7 @@
 
 ## PikPak JAV Renamer Assistant (Deprecated)
 
-> This script has been fully superseded by PikPak Batch JAV Renamer Assistant v0.1.0 and is no longer maintained.
+> This script has been fully superseded by PikPak Batch Renamer Assistant v0.1.0 and is no longer maintained.
 
 ### v0.8.1 (2026-01-22)
 - Add mypikpak.net and pikpak.me match patterns
