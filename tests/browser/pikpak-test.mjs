@@ -58,6 +58,9 @@ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const base='http://127.0.0.1:'+server.address().port;
 const source=await readFile(resolve(root,'pikpak-aria2-helper.user.js'),'utf8');
 const version=source.match(/^\/\/ @version\s+(\S+)/m)[1];
+// ScriptCat refuses an update whose localized @description is empty for a locale it already has.
+const locales=key=>[...source.matchAll(new RegExp('^// @'+key+':(\\S+)[ \\t]+\\S','gm'))].map(m=>m[1]).sort();
+assert.deepEqual(locales('description'),locales('name'),'Every localized @name needs a non-empty localized @description');
 const hash=value=>createHash('sha256').update(value).digest('hex');
 let real, fixturePage, fixtureSynced = false, testError;
 const fixtureName='Userscripts PikPak Browser Fixture', fixtureFile='tests/browser/.generated/pikpak.user.js';

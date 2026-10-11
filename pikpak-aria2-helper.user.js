@@ -11,12 +11,18 @@
 // @name:fr      PikPak Aria2 Assistant
 // @name:de      PikPak Aria2 Helfer
 // @namespace    https://github.com/CheerChen
-// @version      0.3.0
+// @version      0.3.1
 // @description  Send PikPak's native selection to aria2 from the context menu or selection toolbar.
 // @description:en Send PikPak's native selection to aria2 from the context menu or selection toolbar.
 // @description:ja PikPakの選択したファイルを右クリックメニューまたは操作バーからaria2に送信します。
 // @description:zh-CN 从 PikPak 原生右键菜单和多选操作栏发送文件或文件夹到 aria2。
 // @description:zh-TW 從 PikPak 原生右鍵選單和多選操作列傳送檔案或資料夾到 aria2。
+// @description:ko 컨텍스트 메뉴 또는 선택 도구 모음에서 PikPak의 기본 선택 항목을 aria2로 보냅니다.
+// @description:ru Отправка выбранных в PikPak элементов в aria2 из контекстного меню или панели выделения.
+// @description:es Envía la selección nativa de PikPak a aria2 desde el menú contextual o la barra de selección.
+// @description:pt-BR Envia a seleção nativa do PikPak para o aria2 pelo menu de contexto ou pela barra de seleção.
+// @description:fr Envoie la sélection native de PikPak vers aria2 depuis le menu contextuel ou la barre de sélection.
+// @description:de Sendet die native PikPak-Auswahl über das Kontextmenü oder die Auswahlleiste an aria2.
 // @author       cheerchen37
 // @match        *://mypikpak.com/*
 // @match        *://*.mypikpak.com/*

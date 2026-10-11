@@ -123,6 +123,9 @@
 
 ## PikPak Aria2 Helper
 
+### v0.3.1 (2026-10-12)
+- Restore the ko/ru/es/pt-BR/fr/de `@description` entries dropped in v0.3.0; ScriptCat refused the update because those localized descriptions were empty.
+
 ### v0.3.0 (2026-10-02)
 - Send from PikPak's native right-click menu or selected-items toolbar (send entry first in both); no separate file browser. The menu closes after sending and the selection is kept.
 - Folders are scanned fully (with pagination) before submitting, keeping nested paths; overlapping selections are deduplicated, and a failed scan submits nothing.
